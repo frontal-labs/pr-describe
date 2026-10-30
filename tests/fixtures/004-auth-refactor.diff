@@ -1,0 +1,16 @@
+diff --git a/src/auth/session.ts b/src/auth/session.ts
+index 555555..666666 100644
+--- a/src/auth/session.ts
++++ b/src/auth/session.ts
+@@ -1,8 +1,8 @@
+-export function isActive(user: User): boolean {
+-	return user.token != null && !isExpired(user.token);
++export function isActive(session: Session): boolean {
++	return session.token != null && !isExpired(session.token);
+ }
+ 
+-export function roleOf(user: User): Role {
+-	return user.role ?? "guest";
++export function roleOf(session: Session): Role {
++	return session.role ?? "guest";
+ }

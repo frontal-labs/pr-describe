@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore"
+      include scope: true
+    groups:
+      dev-dependencies:
+        patterns:
+          - "@biomejs/*"
+          - "@commitlint/*"
+          - "@changesets/*"
+          - "@types/*"
+          - "husky"
+          - "lint-staged"
+      octokit:
+        patterns:
+          - "@octokit/*"
+      ai-providers:
+        patterns:
+          - "zod"
+    ignore:
+      - dependency-name: "@frontal/style-guide"
+      - dependency-name: "@biomejs/biome"
+      - dependency-name: "@biomejs/cli-darwin-arm64"

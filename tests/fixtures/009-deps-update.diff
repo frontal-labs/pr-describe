@@ -1,0 +1,13 @@
+diff --git a/package.json b/package.json
+index 1a1a1a..2b2b2b 100644
+--- a/package.json
++++ b/package.json
+@@ -10,7 +10,7 @@
+ 	"dependencies": {
+-		"@octokit/rest": "^20.0.2"
++		"@octokit/rest": "^20.0.3"
+ 	},
+ 	"devDependencies": {
+-		"@biomejs/biome": "2.3.4"
++		"@biomejs/biome": "2.3.5"
+ 	}

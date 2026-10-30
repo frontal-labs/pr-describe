@@ -1,0 +1,13 @@
+diff --git a/src/billing/pricing.ts b/src/billing/pricing.ts
+index abc123..def456 100644
+--- a/src/billing/pricing.ts
++++ b/src/billing/pricing.ts
+@@ -12,7 +12,7 @@ export function calculateTotal(items: Item[]): number {
+ export function formatPrice(cents: number, currency: string): string {
+-	const amount = cents / 100;
++	const amount = Math.round(cents / 100);
+ 	return new Intl.NumberFormat("en-US", {
+ 		style: "currency",
+ 		currency,
+ 	}).format(amount);
+ }

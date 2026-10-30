@@ -1,0 +1,15 @@
+# Commit Labeler configuration
+# https://github.com/TimFalla/commit-labeler-action
+
+# Maps conventional commit prefixes to GitHub labels
+feat: "enhancement"
+fix: "bug"
+perf: "performance"
+revert: "revert"
+docs: "documentation"
+style: "style"
+refactor: "refactor"
+test: "test"
+build: "build"
+ci: "ci"
+chore: "internal"

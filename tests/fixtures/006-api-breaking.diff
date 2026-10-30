@@ -1,0 +1,10 @@
+diff --git a/src/api/client.ts b/src/api/client.ts
+index 111111..222222 100644
+--- a/src/api/client.ts
++++ b/src/api/client.ts
+@@ -1,6 +1,6 @@
+ export interface ClientOptions {
+ 	baseUrl: string;
+-	token?: string;
++	token: string;
+ }

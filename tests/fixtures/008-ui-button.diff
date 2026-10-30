@@ -1,0 +1,20 @@
+diff --git a/src/components/Button.tsx b/src/components/Button.tsx
+index abcabc..defdef 100644
+--- a/src/components/Button.tsx
++++ b/src/components/Button.tsx
+@@ -1,10 +1,14 @@
+ import { cva } from "class-variance-authority";
+ 
+ export const buttonVariants = cva(
+-	"rounded px-4 py-2",
++	"rounded-lg px-4 py-2 text-sm font-medium",
+ 	{
+ 		variants: {
+ 			variant: {
+-				primary: "bg-blue-500 text-white",
++				primary: "bg-blue-600 text-white hover:bg-blue-700",
++				secondary: "bg-gray-200 text-gray-900",
+ 			},
+ 		},
+ 	}
+ );

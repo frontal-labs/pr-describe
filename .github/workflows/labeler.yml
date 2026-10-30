@@ -1,0 +1,35 @@
+name: Labeler
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    name: Auto-label PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Label PR by file paths
+        uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+
+      - name: Label by conventional commit type
+        uses: TimFalla/commit-labeler-action@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          config-path: .github/commit-labeler.yml

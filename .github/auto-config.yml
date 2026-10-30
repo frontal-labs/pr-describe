@@ -1,0 +1,49 @@
+# Auto Configuration
+# https://github.com/intuit/auto
+
+version: "10"
+
+name: "Frontal PR Describe"
+
+branches:
+  - name: main
+    channel: "pr-describe"
+    prerelease: null
+
+plugins:
+  - "@auto-it/conventional-commits"
+  - "@auto-it/released"
+  - "@auto-it/changelog"
+  - "@auto-it/npm"
+  - "@auto-it/github"
+  - "@auto-it/empty-changelog"
+
+labels:
+  - name: "release:major"
+    releaseType: "major"
+  - name: "release:minor"
+    releaseType: "minor"
+  - name: "release:patch"
+    releaseType: "patch"
+  - name: "breaking"
+    releaseType: "major"
+  - name: "internal"
+    releaseType: "patch"
+    changelog: false
+  - name: "skip-release"
+    releaseType: null
+    changelog: false
+
+changelog:
+  - use: "conventional-commits"
+    options:
+      - "feat"
+      - "fix"
+      - "perf"
+      - "revert"
+      - "docs"
+      - "refactor"
+      - "test"
+      - "build"
+      - "ci"
+      - "chore"

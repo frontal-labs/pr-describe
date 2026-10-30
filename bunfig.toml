@@ -1,0 +1,7 @@
+[test]
+# timeout in milliseconds
+timeout = 5000
+
+[install]
+# equivalent to npm config set optional false
+optional = false

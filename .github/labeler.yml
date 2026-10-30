@@ -1,0 +1,35 @@
+# Labeler configuration
+# https://github.com/actions/labeler
+
+"src/**":
+  - "src"
+
+"tests/**":
+  - "test"
+
+"docs/**":
+  - "documentation"
+
+".github/**":
+  - "ci"
+
+"*.yml":
+  - "ci"
+
+"*.yaml":
+  - "ci"
+
+"action.yml":
+  - "action"
+
+"package.json":
+  - "config"
+
+"biome.json":
+  - "config"
+
+"tsconfig.json":
+  - "config"
+
+"*.ts":
+  - "typescript"

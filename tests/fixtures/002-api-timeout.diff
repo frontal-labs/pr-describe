@@ -1,0 +1,16 @@
+diff --git a/src/api/client.ts b/src/api/client.ts
+index 111111..222222 100644
+--- a/src/api/client.ts
++++ b/src/api/client.ts
+@@ -40,7 +40,7 @@ export class ApiClient {
+ 		const controller = new AbortController();
+ 		const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+ 		try {
+-			const res = await fetch(url, { signal: controller.signal });
++			const res = await fetch(url, { signal: controller.signal, headers: this.headers });
+ 			return await res.json();
+ 		} finally {
+ 			clearTimeout(timeout);
+ 		}
+ 	}
+ }

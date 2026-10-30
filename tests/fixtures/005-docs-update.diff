@@ -1,0 +1,8 @@
+diff --git a/README.md b/README.md
+index 777777..888888 100644
+--- a/README.md
++++ b/README.md
+@@ -5,3 +5,5 @@
+ # Project
++
++Added a quickstart section.

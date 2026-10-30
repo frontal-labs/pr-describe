@@ -1,0 +1,44 @@
+name: "PR Describe"
+description: "Drafts PR descriptions and change records from the diff, and turns them into changelogs."
+inputs:
+  pr_number:
+    description: "Pull request number"
+    required: true
+    default: ${{ github.event.pull_request.number }}
+  token:
+    description: "GitHub token"
+    required: false
+    default: ${{ secrets.GITHUB_TOKEN }}
+  model:
+    description: "Model name"
+    required: false
+    default: claude-sonnet-5-5
+  api_key_env:
+    description: "Environment variable holding the model API key"
+    required: false
+    default: PR_DESCRIBE_API_KEY
+  write_file:
+    description: "Also write .changes/<pr>.yml"
+    required: false
+    default: "false"
+  dry_run:
+    description: "Print without writing"
+    required: false
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - name: PR Describe
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr_number }}
+        GITHUB_TOKEN: ${{ inputs.token }}
+        MODEL: ${{ inputs.model }}
+        API_KEY_ENV: ${{ inputs.api_key_env }}
+        WRITE_FILE: ${{ inputs.write_file }}
+        DRY_RUN: ${{ inputs.dry_run }}
+      run: |
+        node dist/cli.js describe --dry-run "$DRY_RUN"
+branding:
+  icon: "file-text"
+  color: "blue"

@@ -1,0 +1,28 @@
+diff --git a/src/cache/lru.ts b/src/cache/lru.ts
+index 333333..444444 100644
+--- a/src/cache/lru.ts
++++ b/src/cache/lru.ts
+@@ -1,6 +1,10 @@
+ export class LRUCache {
+ 	private map = new Map<string, string>();
+ 	private max: number;
++	private hits = 0;
++	private misses = 0;
++
++	get hitRate(): number { return this.hits + this.misses ? this.hits / (this.hits + this.misses) : 0; }
+ 
+ 	constructor(max: number) {
+ 		this.max = max;
+@@ -10,6 +14,10 @@ export class LRUCache {
+ 	get(key: string): string | undefined {
+ 		const v = this.map.get(key);
+ 		if (v) {
++			this.hits++;
+ 			this.map.delete(key);
+ 			this.map.set(key, v);
+ 		} else {
++			this.misses++;
+ 		}
+ 		return v;
+ 	}
+ }

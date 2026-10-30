@@ -1,0 +1,19 @@
+diff --git a/src/components/FormInput.tsx b/src/components/FormInput.tsx
+index 111111..222222 100644
+--- a/src/components/FormInput.tsx
++++ b/src/components/FormInput.tsx
+@@ -1,8 +1,12 @@
+ export function FormInput({ label, error }: Props) {
+ 	return (
+-		<div>
+-			<label>{label}</label>
+-			<input />
++		<div className={error ? "error" : ""}>
++			<label className="block text-sm font-medium mb-1">
++				{label}
++			</label>
++			<input className="border rounded px-2 py-1 w-full" />
++			{error && <p className="text-red-600 text-sm mt-1">{error}</p>}
+ 		</div>
+ 	);
+ }

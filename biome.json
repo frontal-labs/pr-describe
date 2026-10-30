@@ -1,0 +1,71 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.3.4/schema.json",
+  "extends": ["@frontal/style-guide/core.json"],
+  "files": {
+    "includes": [
+      "src/**",
+      "tests/**",
+      "*.json",
+      "*.jsonc",
+      "*.md",
+      "*.ts",
+      "*.tsx",
+      ".github/**",
+      "!dist",
+      "!node_modules"
+    ]
+  },
+  "formatter": {
+    "enabled": true
+  },
+  "linter": {
+    "enabled": true
+  },
+  "overrides": [
+    {
+      "includes": ["src/**/*.ts", "src/cli.ts", "src/action.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off",
+            "useAwait": "off"
+          },
+          "style": {
+            "noNonNullAssertion": "off",
+            "useNamingConvention": "off",
+            "useTemplate": "off"
+          },
+          "correctness": {
+            "noUndeclaredVariables": "off",
+            "noUnusedVariables": "off",
+            "noUnusedImports": "off",
+            "useImportExtensions": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          },
+          "nursery": {
+            "useSortedClasses": "off"
+          },
+          "performance": {
+            "noBarrelFile": "off",
+            "useTopLevelRegex": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["tests/**/*.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          }
+        }
+      }
+    }
+  ]
+}
