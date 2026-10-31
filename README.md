@@ -1,4 +1,6 @@
-# @frontal-labs/pr-describe
+# Frontal PR Describe
+
+![Frontal Banner](./banner.jpg)
 
 Drafts PR descriptions and change records from a diff. The model runs in-process with [ggml-node](https://www.npmjs.com/package/ggml-node): no API key, no hosted backend, no telemetry.
 
