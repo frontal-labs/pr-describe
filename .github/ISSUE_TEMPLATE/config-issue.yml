@@ -12,8 +12,8 @@ A clear and concise description of the configuration or action problem.
 
 ## Configuration
 
-```yaml
-<!-- Paste your .frontal/pr-describe.yml here -->
+```json
+<!-- Paste your .describerc.json here -->
 ```
 
 ## Expected behavior

@@ -1,4 +1,8 @@
-import { createGgmlNode, type GgmlNode, type JsonSchemaObject } from "ggml-node";
+import {
+  createGgmlNode,
+  type GgmlNode,
+  type JsonSchemaObject,
+} from "ggml-node";
 
 export interface TextInput {
   prompt: string;
@@ -11,10 +15,10 @@ export interface ObjectInput extends TextInput {
 }
 
 export interface Provider {
-  name: string;
-  generateText(input: TextInput): Promise<string>;
-  generateObject(input: ObjectInput): Promise<unknown>;
   dispose(): Promise<void>;
+  generateObject(input: ObjectInput): Promise<unknown>;
+  generateText(input: TextInput): Promise<string>;
+  name: string;
 }
 
 export interface ProviderOptions {
@@ -42,7 +46,7 @@ const MAX_OUTPUT_TOKENS = 1536;
 
 export function getProvider(
   name: string,
-  options: ProviderOptions = {},
+  options: ProviderOptions = {}
 ): Provider {
   switch (name) {
     case "ggml-node":
@@ -60,7 +64,7 @@ export function resolveModel(model: string | undefined): SupportedModel {
   }
   if (!(SUPPORTED_MODELS as readonly string[]).includes(model)) {
     throw new Error(
-      `Unknown model "${model}". Supported: ${SUPPORTED_MODELS.join(", ")}`,
+      `Unknown model "${model}". Supported: ${SUPPORTED_MODELS.join(", ")}`
     );
   }
   return model as SupportedModel;
@@ -137,16 +141,20 @@ export class MockProvider implements Provider {
     return {
       audience: "internal",
       breaking: false,
-      description:
-        "## Summary\n\nMock change description.\n\n## Changes\n\n- Mock change\n\n## Testing\n\n- Mock tests\n\n## Risks\n\n- None",
+      changes: ["Mock change"],
       evidence: [],
       links: [],
+      risks: ["None"],
       scope: "core",
+      summary: "Mock change description.",
       summary_customer: "Mock change description.",
       summary_internal: "Mock change description.",
+      testing: ["Mock tests"],
       type: "feature",
     };
   }
 
-  async dispose(): Promise<void> {}
+  async dispose(): Promise<void> {
+    // Nothing to release.
+  }
 }

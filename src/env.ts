@@ -11,8 +11,8 @@ export const env = createEnv({
   server: {
     GITHUB_REPOSITORY: z.string().optional(),
     GITHUB_TOKEN: z.string().optional(),
-    MODEL: z.string().optional(),
     MOCK_DATA: z.string().optional(),
+    MODEL: z.string().optional(),
     PR_NUMBER: z.string().optional(),
   },
   skipValidation:

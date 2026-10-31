@@ -159,3 +159,9 @@ export function defaultAudienceForType(_type: ChangeType): Audience {
   // default to `internal` here; consumers may override per-scope.
   return "internal";
 }
+
+/** The change record as pretty JSON, without the internal `schema` field. */
+export function recordToJson(record: ChangeRecord): string {
+  const { schema: _schema, ...fields } = record;
+  return JSON.stringify(fields, null, 2);
+}

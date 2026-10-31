@@ -1,79 +1,42 @@
 # @frontal-labs/pr-describe
 
-Drafts PR descriptions and structured change records from the diff, and turns those records into changelogs. Runs the model in-process — no API key, no hosted backend, no telemetry.
+Drafts PR descriptions and change records from a diff. The model runs in-process with [ggml-node](https://www.npmjs.com/package/ggml-node): no API key, no hosted backend, no telemetry.
+
+**Status:** not published to npm yet. It prints descriptions, and with `--update` it replaces the PR body (opt-in). See [docs/index.md](docs/index.md) for details.
 
 ## Quickstart
 
 ```sh
-bunx @frontal-labs/pr-describe init
+git clone <this repo> pr-describe && cd pr-describe
+bun install && bun run build
+
+cd /path/to/your/repo
+node /path/to/pr-describe/dist/cli.js init
+export GITHUB_TOKEN=...              # read access to pull requests
+export GITHUB_REPOSITORY=owner/repo
+node /path/to/pr-describe/dist/cli.js describe --pr 42 --dry-run
 ```
 
-This writes `.frontal/pr-describe.yml` and an example workflow to `examples/`.
+`init` writes `.describerc.json`. The first run downloads the model (about 1.1 GB for the default).
 
-## CLI
+## Commands
 
 ```sh
-# Draft a description for a PR by number (needs GITHUB_TOKEN)
-pr-describe describe --pr 42
-
-# Or from a local git range
-pr-describe describe --base main --head feature/my-branch
-
-# Dry run (print only)
-pr-describe describe --pr 42 --dry-run
-
-# Also write .changes/42.yml
-pr-describe describe --pr 42 --write-file
-
-# Generate a changelog between two tags
-pr-describe changelog --from v0.1.0 --to v0.2.0 --format markdown
+pr-describe describe --pr 42                 # print a description and change record for a PR
+pr-describe describe --pr 42 --dry-run       # do not print the new PR body
+pr-describe describe --pr 42 --write-file    # also write .changes/42.json
+pr-describe describe --pr 42 --update        # replace the PR body with the generated block (needs GITHUB_TOKEN)
+pr-describe init                             # write .describerc.json
 ```
 
-## Configuration
+`changelog --from v1 --to v2 --format markdown|github-release|changeset|slack` builds release notes from the change records in the PRs merged between two refs. A PR without a record block is listed as missing, not guessed at.
 
-`pr-describe init` writes `.frontal/pr-describe.yml`:
+## Documentation
 
-```yaml
-provider: ggml-node          # ggml-node (in-process model) | mock
-model: qwen2.5-1.5b          # qwen2.5-0.5b | qwen2.5-1.5b | smollm2-360m
-sections: [summary, changes, testing, risks]
-tone: concise
-scopes:
-  billing: ["src/billing/**"]
-  ui: ["src/components/**"]
-ignore: ["**/*.snap", "dist/**"]
-skip_labels: [dependencies, skip-describe]
-max_diff_lines: 4000
-```
-
-## Model
-
-Inference runs in-process with [ggml-node](https://www.npmjs.com/package/ggml-node) on the machine that runs the command or action. There is no API key and no network call to a model provider.
-
-- **qwen2.5-1.5b** (default): better scope and type accuracy, about 1.1 GB on disk, about 1.3 GB RAM (ggml-node estimate).
-- **qwen2.5-0.5b**: smaller and faster, weaker output.
-- **smollm2-360m**: smallest, weakest output.
-- **Mock**: set `MOCK_DATA=true` to skip the model (used in tests).
-
-The model downloads on first use into ggml-node's cache. Set `GGML_NODE_CACHE_DIR` to control where. Requires Node.js 20 or later.
-
-## Privacy
-
-- No data leaves the machine running the command. The model runs locally and makes no network calls to a model provider.
-- The `ignore` list filters lockfiles, generated code, vendored files and snapshots before anything reaches the model.
-
-## GitHub Action
-
-See `.github/workflows/pr-describe.yml`. The action ships compiled `dist/`.
-
-## Testing
-
-```sh
-bun test
-```
-
-Unit tests cover filter, chunk, markers (including edit-detection cases) and record validation. The weekly fixture workflow (`.github/workflows/fixtures.yml`) checks fixture expectations; it does not call the model.
+- [docs/README.md](docs/README.md): full reference. Options, configuration keys, model choices and accuracy, the GitHub Action, testing, troubleshooting, and known issues.
+- [examples/pr-describe.yml](examples/pr-describe.yml): the GitHub Actions workflow.
+- [CONTRIBUTING.md](CONTRIBUTING.md): development setup and conventions.
 
 ## License
 
-MIT// smoke
+MIT. See [LICENSE.md](LICENSE.md).

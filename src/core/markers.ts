@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 
-export const START_MARKER = "<!-- frontal:start";
-export const END_MARKER = "<!-- frontal:end -->";
+export const START_MARKER = "<!-- describe:start";
+export const END_MARKER = "<!-- describe:end -->";
 
 export interface MarkerBlock {
   description: string;
   hash: string;
   raw: string;
-  recordYaml: string;
+  recordJson: string;
 }
 
 export function extractMarkerBlock(body: string): MarkerBlock | null {
@@ -26,15 +26,15 @@ export function extractMarkerBlock(body: string): MarkerBlock | null {
   const hashMatch = /hash=([a-f0-9]{64})/i.exec(inner);
   const hash = hashMatch ? hashMatch[1] : "";
 
-  const yamlMatch = /```yaml\n([\s\S]*?)```/.exec(inner);
-  const recordYaml = yamlMatch ? yamlMatch[1].trim() : "";
+  const jsonMatch = /```json\n([\s\S]*?)```/.exec(inner);
+  const recordJson = jsonMatch ? jsonMatch[1].trim() : "";
 
   const description = inner
     .replace(/hash=[a-f0-9]{64}/i, "")
-    .replace(/```yaml[\s\S]*?```/g, "")
+    .replace(/```json[\s\S]*?```/g, "")
     .trim();
 
-  return { description, hash, raw, recordYaml };
+  return { description, hash, raw, recordJson };
 }
 
 export function hashContent(content: string): string {
@@ -62,12 +62,12 @@ export function isTickmarked(body: string): boolean {
 
 export function renderMarkerBlock(
   description: string,
-  recordYaml: string
+  recordJson: string
 ): string {
   const inner = description.trim();
   const hash = hashContent(inner);
-  const yamlBlock = recordYaml ? `\n\`\`\`yaml\n${recordYaml}\n\`\`\`\n` : "";
-  return `${START_MARKER} hash=${hash} -->${yamlBlock}${inner ? `\n\n${inner}` : ""}\n${END_MARKER}`;
+  const jsonBlock = recordJson ? `\n\`\`\`json\n${recordJson}\n\`\`\`\n` : "";
+  return `${START_MARKER} hash=${hash} -->${jsonBlock}${inner ? `\n\n${inner}` : ""}\n${END_MARKER}`;
 }
 
 export function replaceOrInsertMarkerBlock(

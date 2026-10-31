@@ -1,0 +1,13 @@
+{
+  "$schema": "https://ultracite.ai/schema/ultracite.json",
+  "linter": "biome",
+  "formatter": "biome",
+  "biome": {
+    "extends": ["ultracite/biome/core"]
+  },
+  "editors": ["universal"],
+  "agents": ["universal"],
+  "frameworks": [],
+  "typeAware": false,
+  "installSkill": false
+}

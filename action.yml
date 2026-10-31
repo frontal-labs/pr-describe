@@ -1,10 +1,10 @@
 name: "PR Describe"
-description: "Drafts PR descriptions and change records from the diff, and turns them into changelogs."
+description: "Drafts PR descriptions and change records from the diff, and prints them to the log. Does not update the PR."
 inputs:
   pr_number:
     description: "Pull request number"
     required: true
-    default: ${{ github.event.pull_request.number }}
+    default: ${{ github.event.pull_request.number || github.event.issue.number }}
   token:
     description: "GitHub token"
     required: false
@@ -13,36 +13,57 @@ inputs:
     description: "ggml-node model id (qwen2.5-0.5b, qwen2.5-1.5b, smollm2-360m). Empty uses the config file, then qwen2.5-1.5b"
     required: false
     default: ""
+  update:
+    description: "Replace the PR body with the generated description (needs pull-requests: write)"
+    required: false
+    default: "false"
   write_file:
-    description: "Also write .changes/<pr>.yml"
+    description: "Also write .changes/<pr>.json"
     required: false
     default: "false"
   dry_run:
     description: "Print without writing"
     required: false
     default: "false"
-  allow_forks:
-    description: "Allow forks (requires pull_request_target)"
-    required: false
-    default: "false"
 runs:
   using: "composite"
   steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: "1.3.14"
+
+    # The action runs from its own checkout, so install its dependencies
+    # (ggml-node and the inference binary) and build dist/ when they are missing.
+    - name: Prepare PR Describe
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        cd "$ACTION_PATH"
+        if [ ! -d node_modules/ggml-node ]; then
+          bun install --frozen-lockfile --production --ignore-scripts
+        fi
+        if [ ! -f dist/cli.js ]; then
+          bun run build
+        fi
+
     - name: PR Describe
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         PR_NUMBER: ${{ inputs.pr_number }}
         GITHUB_TOKEN: ${{ inputs.token }}
         MODEL: ${{ inputs.model }}
+        UPDATE: ${{ inputs.update }}
         WRITE_FILE: ${{ inputs.write_file }}
-        DRY_RUN: $inputs.dry_run
-        ALLOW_FORKS: ${{ inputs.allow_fork }}
+        DRY_RUN: ${{ inputs.dry_run }}
       run: |
-        if [ "$ALLOW_FORKS" = "true" ]; then
-          node dist/cli.js describe --pr "$PR_NUMBER"
-        else
-          node dist/cli.js describe --pr "$PR_NUMBER"
-        fi
+        args=(describe --pr "$PR_NUMBER")
+        if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+        if [ "$WRITE_FILE" = "true" ]; then args+=(--write-file); fi
+        if [ "$UPDATE" = "true" ]; then args+=(--update); fi
+        node "$ACTION_PATH/dist/cli.js" "${args[@]}"
 branding:
   icon: "file-text"
   color: "blue"

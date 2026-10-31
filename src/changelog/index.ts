@@ -2,9 +2,13 @@ import type { Audience, ChangeRecord, ChangeType } from "../core/record";
 
 export interface ChangelogOptions {
   audience?: Audience;
-  format?: "markdown" | "github-release" | "changeset";
+  format?: "markdown" | "github-release" | "changeset" | "slack";
   from: string;
+  /** Required for the changeset format: the package the changeset bumps. */
+  packageName?: string;
   polish?: boolean;
+  /** e.g. https://github.com/owner/repo, used to link PR numbers. */
+  repoUrl?: string;
   to: string;
 }
 
@@ -67,7 +71,11 @@ export function renderMarkdown(
         options.audience === "customer"
           ? r.record.summary_customer
           : r.record.summary_internal;
-      lines.push(`- ${summary} ([#${r.prNumber}](${r.prNumber}))`);
+      const pr = `#${r.prNumber}`;
+      const link = options.repoUrl
+        ? `[${pr}](${options.repoUrl}/pull/${r.prNumber})`
+        : pr;
+      lines.push(`- ${summary} (${link})`);
     }
     lines.push("");
   }
@@ -99,28 +107,42 @@ export function renderGitHubRelease(
   return lines.join("\n").trim();
 }
 
+/**
+ * One changeset file: a single frontmatter block that bumps the package, then
+ * one bullet per change. Breaking changes and features bump the minor version,
+ * everything else bumps the patch version (this project is 0.x).
+ */
 export function renderChangeset(
   records: RecordWithPR[],
   options: ChangelogOptions
 ): string {
+  if (!options.packageName) {
+    throw new Error("The changeset format needs a package name (--package)");
+  }
   const filtered = records.filter((r) => r.record.audience !== "internal");
+  if (filtered.length === 0) {
+    return "";
+  }
+  const minor = filtered.some(
+    (r) =>
+      r.record.breaking ||
+      r.record.type === "breaking" ||
+      r.record.type === "feature"
+  );
+  const lines = [
+    "---",
+    `"${options.packageName}": ${minor ? "minor" : "patch"}`,
+    "---",
+    "",
+  ];
   const groups = groupRecords(filtered);
-  const lines: string[] = [];
   for (const t of TYPE_ORDER) {
-    const list = groups.get(t);
-    if (!list || list.length === 0) {
-      continue;
-    }
-    const label = t.charAt(0).toUpperCase() + t.slice(1);
-    lines.push("---");
-    lines.push(`"${label.toLowerCase()}": patch`);
-    lines.push("---");
-    for (const r of list) {
+    for (const r of groups.get(t) ?? []) {
       const summary =
         options.audience === "customer"
           ? r.record.summary_customer
           : r.record.summary_internal;
-      lines.push(summary);
+      lines.push(`- ${summary} (#${r.prNumber})`);
     }
   }
   return lines.join("\n").trim();
