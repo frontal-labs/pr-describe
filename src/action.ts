@@ -4,7 +4,7 @@ import { chunkDiff } from "./core/chunk";
 import { collectFromPR, parseFileDiffs } from "./core/collect";
 import { loadConfig } from "./core/config-loader";
 import { filterPaths } from "./core/filter";
-import { generateDescription } from "./core/generate";
+import { type GenerateResult, generateDescription } from "./core/generate";
 import {
   appendRegenerateCheckbox,
   extractMarkerBlock,
@@ -12,7 +12,7 @@ import {
   renderMarkerBlock,
   replaceOrInsertMarkerBlock,
 } from "./core/markers";
-import { env, getApiKey, isMockData } from "./env";
+import { env, isMockData } from "./env";
 import { getProvider } from "./providers";
 
 async function main() {
@@ -27,24 +27,33 @@ async function main() {
     process.exit(1);
   }
 
-  const collected = await collectFromPR({ owner, prNumber, repo, token });
-  const fileDiffs = filterPaths(parseFileDiffs(collected.diff), { config });
-  const chunks = chunkDiff(fileDiffs, 4000, config.large_change_threshold);
-  const providerName = isMockData() ? "mock" : config.provider;
-  const provider = getProvider(providerName, {
-    apiKey: getApiKey(config.api_key_env) ?? token,
-    model: config.model,
-  });
-
-  const result = await generateDescription(provider, {
-    body: collected.body,
-    commits: collected.commits,
-    config,
-    diff: chunks[0].diff,
-    issueNumbers: collected.issueNumbers,
-    prTemplate: collected.prTemplate,
-    title: collected.title,
-  });
+const collected = await collectFromPR({ owner, prNumber, repo, token });
+	const fileDiffs = filterPaths(parseFileDiffs(collected.diff), { config });
+	const providerName = isMockData() ? "mock" : config.provider;
+	const provider = getProvider(providerName, {
+		model: env.MODEL || config.model,
+	});
+	// The model stays loaded in this process, so dispose it on every path.
+	let result: GenerateResult;
+	try {
+		const chunks = await chunkDiff(
+			fileDiffs,
+			4000,
+			config.large_change_threshold,
+			provider,
+		);
+		result = await generateDescription(provider, {
+			body: collected.body,
+			commits: collected.commits,
+			config,
+			diff: chunks.map((c) => c.diff).join("\n"),
+			issueNumbers: collected.issueNumbers,
+			prTemplate: collected.prTemplate,
+			title: collected.title,
+		});
+	} finally {
+		await provider.dispose();
+	}
 
   const recordYaml = Object.entries(result.record)
     .filter(([k]) => k !== "schema")

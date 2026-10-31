@@ -1,10 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, type FrontalConfig } from "./config";
+import {
+  DEFAULT_CONFIG,
+  type FrontalConfig,
+  type ResolvedConfig,
+} from "./config";
 
 export async function loadConfig(
   cwd: string = process.cwd()
-): Promise<Required<FrontalConfig>> {
+): Promise<ResolvedConfig> {
   const candidates = [
     join(cwd, ".frontal", "pr-describe.yml"),
     join(cwd, "pr-describe.yml"),
@@ -14,10 +18,10 @@ export async function loadConfig(
     if (existsSync(path)) {
       const text = readFileSync(path, "utf-8");
       const parsed = parseYaml(text);
-      return { ...DEFAULT_CONFIG, ...parsed } as Required<FrontalConfig>;
+      return { ...DEFAULT_CONFIG, ...parsed } as ResolvedConfig;
     }
   }
-  return DEFAULT_CONFIG as Required<FrontalConfig>;
+  return DEFAULT_CONFIG;
 }
 
 function parseYaml(text: string): FrontalConfig {

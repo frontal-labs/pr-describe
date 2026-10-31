@@ -3,35 +3,22 @@ import { z } from "zod";
 
 /**
  * Centralized environment validation. All `process.env` reads in the app
- * flow through this module. The dynamic API key env var name comes from
- * config (`api_key_env`), so it is read via `getApiKey` rather than validated
- * statically here.
+ * flow through this module. Inference runs in-process via ggml-node, so no
+ * model API keys are read here.
  */
 export const env = createEnv({
   runtimeEnv: process.env,
   server: {
-    ANTHROPIC_API_KEY: z.string().optional(),
     GITHUB_REPOSITORY: z.string().optional(),
     GITHUB_TOKEN: z.string().optional(),
+    MODEL: z.string().optional(),
     MOCK_DATA: z.string().optional(),
-    OPENAI_API_KEY: z.string().optional(),
-    OPENAI_BASE_URL: z.string().optional(),
     PR_NUMBER: z.string().optional(),
   },
   skipValidation:
     typeof process !== "undefined" &&
     (process.env.NODE_ENV === "test" || process.env.BUN_TEST === "1"),
 });
-
-/**
- * Read a dynamic env var by name (used for the config-driven `api_key_env`).
- */
-export function getApiKey(name: string): string | undefined {
-  if (typeof process === "undefined") {
-    return undefined;
-  }
-  return process.env[name];
-}
 
 export function isMockData(): boolean {
   return env.MOCK_DATA === "true" || env.MOCK_DATA === "1";

@@ -8,7 +8,7 @@
 - Produces a structured change record (type, scope, audience, breaking, evidence, links) that survives squash merges via a hidden YAML block.
 - Protects human edits inside the marker block; adds a "Regenerate description" checkbox instead of overwriting.
 - Turns records into CHANGELOG.md sections, GitHub Release bodies, changeset files and Slack payloads.
-- Runs entirely on your own model API key. No hosted backend, no telemetry.
+- Runs the model in-process. No API key, no hosted backend, no telemetry.
 
 ## Quickstart
 
@@ -21,9 +21,8 @@ bunx @frontal-labs/pr-describe init
 Configuration lives in `.frontal/pr-describe.yml`:
 
 ```yaml
-provider: anthropic          # anthropic | openai | openai-compatible
-model: claude-sonnet-5-5
-api_key_env: PR_DESCRIBE_API_KEY
+provider: ggml-node          # ggml-node (in-process model) | mock
+model: qwen2.5-1.5b          # qwen2.5-0.5b | qwen2.5-1.5b | smollm2-360m
 sections: [summary, changes, testing, risks]
 tone: concise
 scopes:
@@ -34,46 +33,21 @@ skip_labels: [dependencies, skip-describe]
 max_diff_lines: 4000
 ```
 
-## Provider setup
+## Model
 
-### Anthropic (default)
+Inference runs in-process with [ggml-node](https://www.npmjs.com/package/ggml-node) on the machine that runs the command or action. There is no API key and no network call to a model provider.
 
-Set the API key:
+- **qwen2.5-1.5b** (default): better scope and type accuracy, about 1.1 GB on disk, about 1.3 GB RAM (ggml-node estimate).
+- **qwen2.5-0.5b**: smaller and faster, weaker output.
+- **smollm2-360m**: smallest, weakest output.
+- **Mock**: set `MOCK_DATA=true` to skip the model (used in tests).
 
-```sh
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Or point `api_key_env` at a different env var.
-
-### OpenAI
-
-```sh
-export OPENAI_API_KEY=sk-...
-```
-
-### OpenAI-compatible (self-hosted models)
-
-```yaml
-provider: openai-compatible
-api_key_env: MY_MODEL_KEY
-```
-
-Set `OPENAI_BASE_URL` to your endpoint, e.g. `http://localhost:8080/v1`.
-
-### Mock (no key)
-
-```sh
-export MOCK_DATA=true
-```
-
-Used by tests and the fixture workflow.
+The model downloads on first use into ggml-node's cache. Set `GGML_NODE_CACHE_DIR` to control where. Requires Node.js 20 or later.
 
 ## Privacy
 
-- Bring your own key. Data is sent only to the provider you configured.
+- No data leaves the machine running the command. The model runs locally and makes no network calls to a model provider.
 - The `ignore` list filters lockfiles, generated code, vendored files and snapshots before anything reaches the model.
-- Self-hosted models via `openai-compatible` keep data on your own infrastructure.
 
 ## CLI
 
@@ -93,7 +67,7 @@ See `.github/workflows/pr-describe.yml`.
 ## Troubleshooting
 
 - **"Could not determine owner/repo"** — set `GITHUB_REPOSITORY=owner/repo` or pass `--owner`/`--repo`.
-- **"Anthropic API key not set"** — set `ANTHROPIC_API_KEY` or the env var named in `api_key_env`.
+- **"Unknown model"** — `model` must be one of `qwen2.5-0.5b`, `qwen2.5-1.5b` or `smollm2-360m`.
 - **"Rate limit exceeded"** — pass a token via `--token` or `GITHUB_TOKEN`.
 - **Description not updated** — a human edited the block; a "Regenerate description" checkbox was added. Tick it or comment `/describe` to regenerate.
 

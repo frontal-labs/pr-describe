@@ -30,10 +30,19 @@ jobs:
       - name: Build
         run: bun run build
 
+      # The model runs inside the action's Node process. Cache the downloaded
+      # GGUF file so runs after the first skip the ~1.1 GB download.
+      - name: Cache model
+        uses: actions/cache@v4
+        with:
+          path: .ggml-cache
+          key: ggml-node-qwen2.5-1.5b-v1
+
       - name: Describe
         uses: ./
+        env:
+          GGML_NODE_CACHE_DIR: ${{ github.workspace }}/.ggml-cache
         with:
           pr_number: ${{ github.event.pull_request.number }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          model: claude-sonnet-5-5
-          api_key_env: PR_DESCRIBE_API_KEY
+          model: qwen2.5-1.5b

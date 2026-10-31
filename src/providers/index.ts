@@ -1,35 +1,52 @@
-import { env } from "../env";
+import { createGgmlNode, type GgmlNode, type JsonSchemaObject } from "ggml-node";
 
-export interface GenerateInput {
+export interface TextInput {
   prompt: string;
-  schema?: string;
   system: string;
 }
 
-export interface GenerateOutput {
-  json: string;
+export interface ObjectInput extends TextInput {
+  schema: JsonSchemaObject;
+  schemaName: string;
 }
 
 export interface Provider {
-  generate(input: GenerateInput): Promise<GenerateOutput>;
   name: string;
+  generateText(input: TextInput): Promise<string>;
+  generateObject(input: ObjectInput): Promise<unknown>;
+  dispose(): Promise<void>;
 }
 
 export interface ProviderOptions {
-  apiKey?: string;
   model?: string;
 }
 
+/** Model ids ggml-node can load from its registry. */
+export const SUPPORTED_MODELS = [
+  "qwen2.5-0.5b",
+  "qwen2.5-1.5b",
+  "smollm2-360m",
+] as const;
+export type SupportedModel = (typeof SUPPORTED_MODELS)[number];
+
+export const DEFAULT_MODEL: SupportedModel = "qwen2.5-1.5b";
+
+/**
+ * Context window for every request. ggml-node defaults to 4096, which is too
+ * small for a 4000-token diff chunk plus the instructions and the output.
+ */
+export const CONTEXT_SIZE = 8192;
+
+/** Upper bound on generated tokens for one request. */
+const MAX_OUTPUT_TOKENS = 1536;
+
 export function getProvider(
   name: string,
-  options: ProviderOptions = {}
+  options: ProviderOptions = {},
 ): Provider {
   switch (name) {
-    case "anthropic":
-      return new AnthropicProvider(options);
-    case "openai":
-    case "openai-compatible":
-      return new OpenAIProvider(options);
+    case "ggml-node":
+      return new GgmlProvider(options);
     case "mock":
       return new MockProvider();
     default:
@@ -37,12 +54,91 @@ export function getProvider(
   }
 }
 
+export function resolveModel(model: string | undefined): SupportedModel {
+  if (model === undefined) {
+    return DEFAULT_MODEL;
+  }
+  if (!(SUPPORTED_MODELS as readonly string[]).includes(model)) {
+    throw new Error(
+      `Unknown model "${model}". Supported: ${SUPPORTED_MODELS.join(", ")}`,
+    );
+  }
+  return model as SupportedModel;
+}
+
+/**
+ * Runs a small language model inside the Node process via ggml-node. The model
+ * loads lazily on first use and is cached on disk by ggml-node.
+ */
+export class GgmlProvider implements Provider {
+  name = "ggml-node";
+  private model: SupportedModel;
+  private node: GgmlNode | null = null;
+
+  constructor(options: ProviderOptions = {}) {
+    this.model = resolveModel(options.model);
+  }
+
+  private get(): GgmlNode {
+    if (!this.node) {
+      this.node = createGgmlNode({
+        contextSize: CONTEXT_SIZE,
+        gpu: "auto",
+        model: this.model,
+        threads: "auto",
+      });
+    }
+    return this.node;
+  }
+
+  async generateText({ prompt, system }: TextInput): Promise<string> {
+    const out = await this.get().generate({
+      maxTokens: MAX_OUTPUT_TOKENS,
+      prompt,
+      system,
+      temperature: 0.1,
+    });
+    return out.text.trim();
+  }
+
+  async generateObject({
+    prompt,
+    system,
+    schema,
+    schemaName,
+  }: ObjectInput): Promise<unknown> {
+    const out = await this.get().object({
+      maxTokens: MAX_OUTPUT_TOKENS,
+      prompt,
+      schema,
+      schemaName,
+      system,
+      temperature: 0.1,
+    });
+    return out.object;
+  }
+
+  async dispose(): Promise<void> {
+    if (this.node) {
+      await this.node.unload();
+      this.node = null;
+    }
+  }
+}
+
 export class MockProvider implements Provider {
   name = "mock";
-  async generate(_input: GenerateInput): Promise<GenerateOutput> {
-    const record = {
+
+  async generateText(_input: TextInput): Promise<string> {
+    return "Mock change description.";
+  }
+
+  async generateObject(_input: ObjectInput): Promise<unknown> {
+    return {
       audience: "internal",
       breaking: false,
+      description:
+        "## Summary\n\nMock change description.\n\n## Changes\n\n- Mock change\n\n## Testing\n\n- Mock tests\n\n## Risks\n\n- None",
       evidence: [],
       links: [],
       scope: "core",
@@ -50,93 +146,7 @@ export class MockProvider implements Provider {
       summary_internal: "Mock change description.",
       type: "feature",
     };
-    const description =
-      "## Summary\n\nMock change description.\n\n## Changes\n\n- Mock change\n\n## Testing\n\n- Mock tests\n\n## Risks\n\n- None";
-    return {
-      json: `---FRONTCAL_JSON---\n${JSON.stringify(record)}\n---FRONTCAL_MD---\n${description}`,
-    };
-  }
-}
-
-export class AnthropicProvider implements Provider {
-  name = "anthropic";
-  private apiKey: string;
-  private model: string;
-
-  constructor(options: ProviderOptions = {}) {
-    this.apiKey = options.apiKey ?? env.ANTHROPIC_API_KEY ?? "";
-    this.model = options.model ?? "claude-sonnet-5-5";
   }
 
-  async generate(input: GenerateInput): Promise<GenerateOutput> {
-    if (!this.apiKey) {
-      throw new Error("Anthropic API key not set");
-    }
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      body: JSON.stringify({
-        max_tokens: 4096,
-        messages: [{ content: input.prompt, role: "user" }],
-        model: this.model,
-        system: input.system,
-        temperature: 0.1,
-      }),
-      headers: {
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json",
-        "x-api-key": this.apiKey,
-      },
-      method: "POST",
-    });
-    if (!res.ok) {
-      throw new Error(`Anthropic API error: ${res.status} ${await res.text()}`);
-    }
-    const data = (await res.json()) as { content: Array<{ text: string }> };
-    const text = data.content
-      .map((c) => c.text)
-      .join("")
-      .trim();
-    return { json: text };
-  }
-}
-
-export class OpenAIProvider implements Provider {
-  name = "openai";
-  private apiKey: string;
-  private model: string;
-  private baseUrl: string;
-
-  constructor(options: ProviderOptions = {}) {
-    this.apiKey = options.apiKey ?? env.OPENAI_API_KEY ?? "";
-    this.model = options.model ?? "gpt-4o";
-    this.baseUrl = env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-  }
-
-  async generate(input: GenerateInput): Promise<GenerateOutput> {
-    if (!this.apiKey) {
-      throw new Error("OpenAI API key not set");
-    }
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      body: JSON.stringify({
-        messages: [
-          { content: input.system, role: "system" },
-          { content: input.prompt, role: "user" },
-        ],
-        model: this.model,
-        temperature: 0.1,
-      }),
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-    });
-    if (!res.ok) {
-      throw new Error(`OpenAI API error: ${res.status} ${await res.text()}`);
-    }
-    const data = (await res.json()) as {
-      choices: Array<{ message: { content: string } }>;
-    };
-    const text = data.choices[0]?.message?.content ?? "";
-    return { json: text.trim() };
-  }
+  async dispose(): Promise<void> {}
 }

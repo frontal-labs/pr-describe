@@ -39,14 +39,6 @@ jobs:
         env:
           MOCK_DATA: "true"
 
-      - name: Run fixtures (real provider)
-        if: ${{ secrets.ANTHROPIC_API_KEY || secrets.OPENAI_API_KEY }}
-        run: bun test tests/fixtures.test.ts
-        env:
-          MOCK_DATA: "false"
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-
       - name: Upload fixture report
         if: always()
         uses: actions/upload-artifact@v4

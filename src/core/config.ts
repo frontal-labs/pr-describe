@@ -1,4 +1,4 @@
-export type ProviderName = "anthropic" | "openai" | "openai-compatible";
+export type ProviderName = "ggml-node" | "mock";
 
 export type Section =
   | "summary"
@@ -9,7 +9,6 @@ export type Section =
   | "links";
 
 export interface FrontalConfig {
-  api_key_env?: string;
   ignore?: string[];
   large_change_threshold?: number;
   max_diff_lines?: number;
@@ -21,13 +20,18 @@ export interface FrontalConfig {
   tone?: string;
 }
 
-export const DEFAULT_CONFIG: Required<FrontalConfig> = {
-  api_key_env: "PR_DESCRIBE_API_KEY",
+/**
+ * Resolved config. `model` is optional: when unset, the provider uses
+ * `DEFAULT_MODEL` from `providers`.
+ */
+export type ResolvedConfig = Omit<Required<FrontalConfig>, "model"> &
+  Pick<FrontalConfig, "model">;
+
+export const DEFAULT_CONFIG: ResolvedConfig = {
   ignore: [],
   large_change_threshold: 500,
   max_diff_lines: 4000,
-  model: "claude-sonnet-5-5",
-  provider: "anthropic",
+  provider: "ggml-node",
   scopes: {},
   sections: ["summary", "changes", "testing", "risks"],
   skip_labels: [],
@@ -37,9 +41,9 @@ export const DEFAULT_CONFIG: Required<FrontalConfig> = {
 export function mergeConfig(
   base: FrontalConfig,
   overrides?: Partial<FrontalConfig>
-): Required<FrontalConfig> {
+): ResolvedConfig {
   return {
     ...base,
     ...(overrides ?? {}),
-  } as Required<FrontalConfig>;
+  } as ResolvedConfig;
 }

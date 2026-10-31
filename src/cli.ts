@@ -4,7 +4,11 @@ import { chunkDiff } from "./core/chunk";
 import { collectFromPR, parseFileDiffs } from "./core/collect";
 import { loadConfig } from "./core/config-loader";
 import { filterPaths, hasSkipLabel } from "./core/filter";
-import { generateDescription } from "./core/generate";
+import {
+	type GenerateResult,
+	filterClaimsByEvidence,
+	generateDescription,
+} from "./core/generate";
 import {
   appendRegenerateCheckbox,
   extractMarkerBlock,
@@ -12,7 +16,7 @@ import {
   renderMarkerBlock,
   replaceOrInsertMarkerBlock,
 } from "./core/markers";
-import { env, getApiKey, isMockData } from "./env";
+import { env, isMockData } from "./env";
 import { getProvider } from "./providers";
 
 interface CliArgs {
@@ -53,99 +57,136 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 async function main() {
-  const args = parseArgs(process.argv);
-  const command = args._[0] ?? "describe";
+	const args = parseArgs(process.argv);
+	const command = args._[0] ?? "describe";
 
-  if (command === "describe") {
-    await describeCommand(args);
-  } else if (command === "changelog") {
-    await changelogCommand(args);
-  } else if (command === "init") {
-    await initCommand(args);
-  } else {
-    console.error(`Unknown command: ${command}`);
-    process.exit(1);
-  }
+	if (command === "describe") {
+		await describeCommand(args);
+	} else if (command === "changelog") {
+		await changelogCommand(args);
+	} else if (command === "init") {
+		await initCommand(args);
+	} else {
+		console.error(`Unknown command: ${command}`);
+		process.exit(1);
+	}
+}
+
+function truncateWords(text: string, maxWords: number): string {
+	const words = text.trim().split(/\s+/);
+	if (words.length <= maxWords) return text.trim();
+	return `${words.slice(0, maxWords).join(" ")}...`;
 }
 
 async function describeCommand(args: CliArgs) {
-  const config = await loadConfig();
-  const token = args.token ?? env.GITHUB_TOKEN;
+	const config = await loadConfig();
+	const token = args.token ?? env.GITHUB_TOKEN;
 
-  const collected = await collectFromPR({
-    base: args.base,
-    head: args.head,
-    owner: args.owner,
-    prNumber: args.pr ? Number(args.pr) : undefined,
-    repo: args.repo,
-    token,
-  });
+	const collected = await collectFromPR({
+		base: args.base,
+		head: args.head,
+		owner: args.owner,
+		prNumber: args.pr ? Number(args.pr) : undefined,
+		repo: args.repo,
+		token,
+	});
 
-  if (hasSkipLabel(collected.labels, config.skip_labels)) {
-    console.log("Skipping PR: has skip label");
-    return;
-  }
+	// Fork PRs are skipped by default: the Action would need pull_request_target
+	// to read the base repo's secrets, which is a security tradeoff.
+	if (collected.fork) {
+		console.log(
+			`Skipping PR #${collected.prNumber}: fork from ${collected.headOwner}/${collected.repo}. ` +
+				"Set pull_request_target in .github/workflows/ to enable forks (see docs/).",
+		);
+		return;
+	}
 
-  const fileDiffs = filterPaths(parseFileDiffs(collected.diff), { config });
-  if (fileDiffs.length === 0) {
-    console.log("No non-ignored files in diff");
-    return;
-  }
+	if (hasSkipLabel(collected.labels, config.skip_labels)) {
+		console.log("Skipping PR: has skip label");
+		return;
+	}
 
-  const chunks = chunkDiff(fileDiffs, 4000, config.large_change_threshold);
-  const providerName = isMockData() ? "mock" : config.provider;
-  const provider = getProvider(providerName, {
-    apiKey: getApiKey(config.api_key_env) ?? token ?? "",
-    model: config.model ?? "claude-sonnet-5-5",
-  });
+	const fileDiffs = filterPaths(parseFileDiffs(collected.diff), { config });
+	if (fileDiffs.length === 0) {
+		console.log("No non-ignored files in diff");
+		return;
+	}
 
-  const result = await generateDescription(provider, {
-    body: collected.body,
-    commits: collected.commits,
-    config,
-    diff: chunks[0].diff,
-    issueNumbers: collected.issueNumbers,
-    prTemplate: collected.prTemplate,
-    title: collected.title,
-  });
+	const providerName = isMockData() ? "mock" : config.provider;
+	const provider = getProvider(providerName, {
+		model: env.MODEL || config.model,
+	});
 
-  const recordYaml = Object.entries(result.record)
-    .filter(([k]) => k !== "schema")
-    .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
-    .join("\n");
-  const block = renderMarkerBlock(result.description, recordYaml);
+	const totalLines = fileDiffs.reduce(
+		(sum, f) => sum + f.diff.split("\n").length,
+		0,
+	);
+	const isLarge = totalLines > config.large_change_threshold;
 
-  const existing = extractMarkerBlock(collected.body);
-  if (existing && isEdited(collected.body, existing.hash)) {
-    const updated = appendRegenerateCheckbox(collected.body);
-    console.log(
-      "PR description was edited by human; preserving changes and adding regenerate checkbox"
-    );
-    if (!args.dryRun) {
-      console.log(updated);
-    }
-    return;
-  }
+	// The model stays loaded in this process, so dispose it on every path.
+	let result: GenerateResult;
+	try {
+		const chunks = await chunkDiff(
+			fileDiffs,
+			4000,
+			config.large_change_threshold,
+			provider,
+		);
+		result = await generateDescription(provider, {
+			body: collected.body,
+			commits: collected.commits,
+			config,
+			diff: chunks.map((c) => c.diff).join("\n"),
+			issueNumbers: collected.issueNumbers,
+			prTemplate: collected.prTemplate,
+			title: collected.title,
+		});
+	} finally {
+		await provider.dispose();
+	}
 
-  const newBody = replaceOrInsertMarkerBlock(collected.body, block);
-  console.log("=== Generated PR description ===");
-  console.log(result.description);
-  console.log("=== Change record ===");
-  console.log(JSON.stringify(result.record, null, 2));
+	const filtered = filterClaimsByEvidence(result.record, result.description);
+	const description = isLarge
+		? filtered.description
+		: truncateWords(filtered.description, 250);
 
-  if (args.writeFile) {
-    const prNum = args.pr ?? "local";
-    const dir = join(process.cwd(), ".changes");
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(join(dir, `${prNum}.yml`), recordYaml);
-  }
+	const recordYaml = Object.entries(filtered.record)
+		.filter(([k]) => k !== "schema")
+		.map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+		.join("\n");
+	const block = renderMarkerBlock(description, recordYaml);
 
-  if (!args.dryRun) {
-    console.log("\n--- New PR body (with markers) ---");
-    console.log(newBody);
-  }
+	const existing = extractMarkerBlock(collected.body);
+	if (existing && isEdited(collected.body, existing.hash)) {
+		const updated = appendRegenerateCheckbox(collected.body);
+		console.log(
+			"PR description was edited by human; preserving changes and adding regenerate checkbox",
+		);
+		if (!args.dryRun) {
+			console.log(updated);
+		}
+		return;
+	}
+
+	const newBody = replaceOrInsertMarkerBlock(collected.body, block);
+	console.log("=== Generated PR description ===");
+	console.log(description);
+	console.log("=== Change record ===");
+	console.log(JSON.stringify(filtered.record, null, 2));
+
+	if (args.writeFile) {
+		const prNum = args.pr ?? "local";
+		const dir = join(process.cwd(), ".changes");
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+		writeFileSync(join(dir, `${prNum}.yml`), recordYaml);
+	}
+
+	if (!args.dryRun) {
+		console.log("\n--- New PR body (with markers) ---");
+		console.log(newBody);
+	}
 }
 
 async function changelogCommand(args: CliArgs) {
@@ -153,9 +194,8 @@ async function changelogCommand(args: CliArgs) {
 }
 
 async function initCommand(_args: CliArgs) {
-  const template = `provider: anthropic
-model: claude-sonnet-5-5
-api_key_env: PR_DESCRIBE_API_KEY
+  const template = `provider: ggml-node
+model: qwen2.5-1.5b
 sections: [summary, changes, testing, risks]
 tone: concise
 scopes:

@@ -10,19 +10,19 @@ inputs:
     required: false
     default: ${{ secrets.GITHUB_TOKEN }}
   model:
-    description: "Model name"
+    description: "ggml-node model id (qwen2.5-0.5b, qwen2.5-1.5b, smollm2-360m). Empty uses the config file, then qwen2.5-1.5b"
     required: false
-    default: claude-sonnet-5-5
-  api_key_env:
-    description: "Environment variable holding the model API key"
-    required: false
-    default: PR_DESCRIBE_API_KEY
+    default: ""
   write_file:
     description: "Also write .changes/<pr>.yml"
     required: false
     default: "false"
   dry_run:
     description: "Print without writing"
+    required: false
+    default: "false"
+  allow_forks:
+    description: "Allow forks (requires pull_request_target)"
     required: false
     default: "false"
 runs:
@@ -34,11 +34,15 @@ runs:
         PR_NUMBER: ${{ inputs.pr_number }}
         GITHUB_TOKEN: ${{ inputs.token }}
         MODEL: ${{ inputs.model }}
-        API_KEY_ENV: ${{ inputs.api_key_env }}
         WRITE_FILE: ${{ inputs.write_file }}
-        DRY_RUN: ${{ inputs.dry_run }}
+        DRY_RUN: $inputs.dry_run
+        ALLOW_FORKS: ${{ inputs.allow_fork }}
       run: |
-        node dist/cli.js describe --dry-run "$DRY_RUN"
+        if [ "$ALLOW_FORKS" = "true" ]; then
+          node dist/cli.js describe --pr "$PR_NUMBER"
+        else
+          node dist/cli.js describe --pr "$PR_NUMBER"
+        fi
 branding:
   icon: "file-text"
   color: "blue"

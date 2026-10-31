@@ -3,20 +3,24 @@ import { env } from "../env";
 import { readTextFileSync, runGit } from "../runtime";
 
 export interface CollectedData {
-  author: string;
-  base: string;
-  body: string;
-  branch: string;
-  commits: string[];
-  diff: string;
-  head: string;
-  issueNumbers: string[];
-  labels: string[];
-  owner: string;
-  prNumber?: number;
-  prTemplate: string | null;
-  repo: string;
-  title: string;
+	author: string;
+	base: string;
+	body: string;
+	branch: string;
+	commits: string[];
+	diff: string;
+	head: string;
+	issueNumbers: string[];
+	labels: string[];
+	owner: string;
+	prNumber?: number;
+	prTemplate: string | null;
+	repo: string;
+	title: string;
+	/** True when the PR head repo differs from the base repo (a fork). */
+	fork: boolean;
+	/** Owner/login of the PR head repo, when fork is true. */
+	headOwner?: string;
 }
 
 export interface CollectOptions {
@@ -96,22 +100,26 @@ async function collectFromPRNumber(
     // no template
   }
 
-  return {
-    author: pr.user?.login ?? "",
-    base: pr.base.ref,
-    body: pr.body ?? "",
-    branch: pr.head.ref,
-    commits,
-    diff,
-    head: pr.head.sha,
-    issueNumbers: Array.from(linked),
-    labels: pr.labels.map((l) => l.name),
-    owner,
-    prNumber,
-    prTemplate,
-    repo,
-    title: pr.title,
-  };
+return {
+		author: pr.user?.login ?? "",
+		base: pr.base.ref,
+		body: pr.body ?? "",
+		branch: pr.head.ref,
+		commits,
+		diff,
+		fork: pr.head.repo?.owner?.login
+			? pr.head.repo.owner.login !== owner
+			: false,
+		head: pr.head.sha,
+		headOwner: pr.head.repo?.owner?.login,
+		issueNumbers: Array.from(linked),
+		labels: pr.labels.map((l) => l.name),
+		owner,
+		prNumber,
+		prTemplate,
+		repo,
+		title: pr.title,
+	};
 }
 
 function collectLocal(
@@ -148,21 +156,22 @@ function collectLocal(
     // no template
   }
 
-  return {
-    author: "",
-    base,
-    body: "",
-    branch: branch.trim(),
-    commits,
-    diff,
-    head,
-    issueNumbers: Array.from(linked),
-    labels: [],
-    owner,
-    prTemplate,
-    repo,
-    title,
-  };
+return {
+		author: "",
+		base,
+		body: "",
+		branch: branch.trim(),
+		commits,
+		diff,
+		fork: false,
+		head,
+		issueNumbers: Array.from(linked),
+		labels: [],
+		owner,
+		prTemplate,
+		repo,
+		title,
+	};
 }
 
 export function parseFileDiffs(

@@ -1,6 +1,6 @@
 # @frontal-labs/pr-describe
 
-Drafts PR descriptions and structured change records from the diff, and turns those records into changelogs. Runs entirely on your own model API key — no hosted backend, no telemetry.
+Drafts PR descriptions and structured change records from the diff, and turns those records into changelogs. Runs the model in-process — no API key, no hosted backend, no telemetry.
 
 ## Quickstart
 
@@ -34,9 +34,8 @@ pr-describe changelog --from v0.1.0 --to v0.2.0 --format markdown
 `pr-describe init` writes `.frontal/pr-describe.yml`:
 
 ```yaml
-provider: anthropic          # anthropic | openai | openai-compatible
-model: claude-sonnet-5-5
-api_key_env: PR_DESCRIBE_API_KEY
+provider: ggml-node          # ggml-node (in-process model) | mock
+model: qwen2.5-1.5b          # qwen2.5-0.5b | qwen2.5-1.5b | smollm2-360m
 sections: [summary, changes, testing, risks]
 tone: concise
 scopes:
@@ -47,17 +46,21 @@ skip_labels: [dependencies, skip-describe]
 max_diff_lines: 4000
 ```
 
-## Provider setup
+## Model
 
-- **Anthropic** (default): set `ANTHROPIC_API_KEY` or the env var named in `api_key_env`.
-- **OpenAI**: set `OPENAI_API_KEY` and optionally `OPENAI_BASE_URL` for self-hosted models.
-- **Mock**: set `MOCK_DATA=true` to run without a model key (used in tests).
+Inference runs in-process with [ggml-node](https://www.npmjs.com/package/ggml-node) on the machine that runs the command or action. There is no API key and no network call to a model provider.
+
+- **qwen2.5-1.5b** (default): better scope and type accuracy, about 1.1 GB on disk, about 1.3 GB RAM (ggml-node estimate).
+- **qwen2.5-0.5b**: smaller and faster, weaker output.
+- **smollm2-360m**: smallest, weakest output.
+- **Mock**: set `MOCK_DATA=true` to skip the model (used in tests).
+
+The model downloads on first use into ggml-node's cache. Set `GGML_NODE_CACHE_DIR` to control where. Requires Node.js 20 or later.
 
 ## Privacy
 
-- Bring your own key. No data is sent anywhere except the provider you configured.
+- No data leaves the machine running the command. The model runs locally and makes no network calls to a model provider.
 - The `ignore` list filters lockfiles, generated code, vendored files and snapshots before anything reaches the model.
-- Self-hosted models via `openai-compatible` keep data on your own infrastructure.
 
 ## GitHub Action
 
@@ -69,7 +72,7 @@ See `.github/workflows/pr-describe.yml`. The action ships compiled `dist/`.
 bun test
 ```
 
-Unit tests cover filter, chunk, markers (including edit-detection cases) and record validation. A separate fixture run (`.github/workflows/fixtures.yml`) reports type accuracy against the real provider.
+Unit tests cover filter, chunk, markers (including edit-detection cases) and record validation. The weekly fixture workflow (`.github/workflows/fixtures.yml`) checks fixture expectations; it does not call the model.
 
 ## License
 

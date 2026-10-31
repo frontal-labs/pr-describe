@@ -21,7 +21,7 @@ export interface ChangeRecord {
   type: ChangeType;
 }
 
-const VALID_TYPES: ChangeType[] = [
+export const VALID_TYPES: ChangeType[] = [
   "feature",
   "fix",
   "perf",
@@ -31,7 +31,11 @@ const VALID_TYPES: ChangeType[] = [
   "internal",
 ];
 
-const VALID_AUDIENCES: Audience[] = ["customer", "developer", "internal"];
+export const VALID_AUDIENCES: Audience[] = [
+  "customer",
+  "developer",
+  "internal",
+];
 
 export interface ValidationError {
   message: string;

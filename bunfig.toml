@@ -4,4 +4,5 @@ timeout = 5000
 
 [install]
 # equivalent to npm config set optional false
-optional = false
+# Required: node-llama-cpp ships its inference binary as an optional dependency.
+optional = true
