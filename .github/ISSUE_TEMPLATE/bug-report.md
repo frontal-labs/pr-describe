@@ -26,7 +26,7 @@ A clear and concise description of what you expected to happen.
 - `pr-describe` version:
 - Node.js/Bun version:
 - OS:
-- Provider (Anthropic/OpenAI/Mock):
+- Provider (ggml-node/Mock):
 
 ## Logs
 

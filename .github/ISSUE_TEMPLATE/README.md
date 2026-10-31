@@ -4,15 +4,15 @@
 
 This directory contains the issue templates used by the repository:
 
-- `bug-report.yml` — for reporting bugs
-- `feature-request.yml` — for suggesting new features
-- `docs.yml` — for documentation improvements
-- `config-issue.yml` — for configuration or action problems
-- `question.yml` — for asking questions
+- `bug-report.md` — for reporting bugs
+- `feature-request.md` — for suggesting new features
+- `docs.md` — for documentation improvements
+- `config-issue.md` — for configuration or action problems
+- `question.md` — for asking questions
 
 ## Adding a new template
 
-Create a new `.yml` file in this directory following the existing pattern:
+Create a new `.md` file in this directory following the existing pattern:
 
 ```yaml
 ---
