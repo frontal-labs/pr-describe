@@ -1,44 +1,30 @@
-import type { Provider } from "./providers";
-
-export interface Chunk {
-  diff: string;
-  files: string[];
-  tokenEstimate: number;
-}
-
-export interface FileDiff {
-  diff: string;
-  path: string;
-}
+import {
+  CHARS_PER_TOKEN,
+  CHUNK_SUMMARY_INSTRUCTION,
+  CHUNK_SUMMARY_SYSTEM,
+  MAX_REDUCE_ROUNDS,
+  MAX_SUMMARY_CALLS,
+} from "./constants";
+import type { Chunk, FileDiff, Provider } from "./types";
 
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
 export function countLines(text: string): number {
   return text.split("\n").length;
 }
 
-const MAX_REDUCE_ROUNDS = 3;
-
 /**
- * Upper bound on summary model calls for one diff. Every call runs the local
- * model, and PR authors control the diff size, so this keeps a huge PR from
- * tying up the runner.
- */
-export const MAX_SUMMARY_CALLS = 20;
-
-/**
- * Split a list of file diffs into chunks that fit a token budget.
+ * Split file diffs into chunks that fit a token budget.
  *
- * If the whole diff fits the budget, a single chunk is returned.
- * Otherwise (with a provider), large diffs are reduced: each chunk is
- * summarized, the summaries are re-packed, and the process repeats until the
- * result fits in one chunk. Every chunk the caller receives is therefore
- * included in the final prompt. Throws if the diff still does not fit after
- * MAX_REDUCE_ROUNDS, rather than silently dropping content. Throws before
- * any model call if the first round needs more than MAX_SUMMARY_CALLS chunks,
- * and throws if later rounds exceed that total.
+ * If the whole diff fits the budget, a single chunk is returned. Otherwise
+ * (with a provider) large diffs are reduced: each chunk is summarized, the
+ * summaries are re-packed, and the process repeats until the result fits in one
+ * chunk. Every chunk the caller receives is therefore included in the final
+ * prompt. Throws before any model call when the first round already needs too
+ * many chunks, and throws when reduction does not converge, rather than
+ * silently dropping content.
  *
  * Without a provider, the per-file budget packing is returned as-is.
  */
@@ -118,12 +104,9 @@ async function summarizeChunk(
   chunk: Chunk,
   provider: Provider
 ): Promise<string> {
-  const prompt =
-    "Summarize the following code diff concisely. " +
-    `Focus on what changed and why. Keep it under 200 words.\n\n${chunk.diff}`;
   const text = await provider.generateText({
-    prompt,
-    system: "You summarize code diffs concisely.",
+    prompt: `${CHUNK_SUMMARY_INSTRUCTION}\n\n${chunk.diff}`,
+    system: CHUNK_SUMMARY_SYSTEM,
   });
   return text.trim();
 }

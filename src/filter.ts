@@ -1,47 +1,19 @@
-import { DEFAULT_CONFIG, type FrontalConfig } from "./config";
+import {
+  BACKSLASH_PATTERN,
+  BUILTIN_IGNORE,
+  GLOB_SPECIAL_CHARS,
+  TRAILING_SLASH,
+} from "./constants";
+import type { ResolvedConfig } from "./types";
 
-const DEFAULT_IGNORE: string[] = [
-  "**/bun.lock",
-  "**/bun.lockb",
-  "**/package-lock.json",
-  "**/yarn.lock",
-  "**/pnpm-lock.yaml",
-  "**/dist/**",
-  "**/build/**",
-  "**/vendor/**",
-  "**/*.snap",
-  "**/*.min.js",
-  "**/*.min.css",
-  "**/*.generated.*",
-  "**/*.auto.*",
-  "**/generated/**",
-  "**/auto-generated/**",
-  "**/codegen/**",
-  "**/__generated__/**",
-];
+const specialRegexChars = new Set(GLOB_SPECIAL_CHARS);
 
 export interface FilterOptions {
-  config?: FrontalConfig;
-  skip_labels?: string[];
+  config?: Pick<ResolvedConfig, "ignore">;
 }
 
-const specialRegexChars = new Set([
-  ".",
-  "+",
-  "^",
-  "$",
-  "{",
-  "}",
-  "(",
-  ")",
-  "|",
-  "[",
-  "]",
-  "\\",
-]);
-
-export function isIgnored(path: string, globs: string[]): boolean {
-  const normalized = path.replace(/\\/g, "/");
+export function isIgnored(path: string, globs: readonly string[]): boolean {
+  const normalized = path.replace(BACKSLASH_PATTERN, "/");
   for (const glob of globs) {
     if (matchGlob(normalized, glob)) {
       return true;
@@ -51,7 +23,9 @@ export function isIgnored(path: string, globs: string[]): boolean {
 }
 
 export function matchGlob(path: string, pattern: string): boolean {
-  const normalized = pattern.replace(/\\/g, "/").replace(/\/$/, "");
+  const normalized = pattern
+    .replace(BACKSLASH_PATTERN, "/")
+    .replace(TRAILING_SLASH, "");
   const regex = globToRegex(normalized);
   return regex.test(path);
 }
@@ -81,7 +55,7 @@ function globToRegex(pattern: string): RegExp {
       regex += "[^/]";
       i++;
     } else if (specialRegexChars.has(c)) {
-      regex += "\\".concat(c);
+      regex += `\\${c}`;
       i++;
     } else {
       regex += c;
@@ -92,34 +66,22 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp(regex);
 }
 
-export function filterPaths(paths: string[], options?: FilterOptions): string[];
-export function filterPaths<T extends { path: string }>(
-  paths: T[],
-  options?: FilterOptions
-): T[];
-export function filterPaths<T extends { path: string } | string>(
+/** The path of a plain path string or of a { path } object. */
+const pathOf = (item: string | { path: string }): string =>
+  typeof item === "string" ? item : item.path;
+
+/** Keep the items whose path is not ignored. Works on paths and on { path } objects alike. */
+export function filterPaths<T extends string | { path: string }>(
   paths: T[],
   options: FilterOptions = {}
 ): T[] {
-  const ignore = [
-    ...DEFAULT_IGNORE,
-    ...(options.config?.ignore ?? DEFAULT_CONFIG.ignore),
-  ];
-  if (paths.length === 0) {
-    return [];
-  }
-  const first = paths[0];
-  if (typeof first === "string") {
-    return (paths as string[]).filter((p) => !isIgnored(p, ignore)) as T[];
-  }
-  return (paths as { path: string }[]).filter(
-    (p) => !isIgnored(p.path, ignore)
-  ) as T[];
+  const ignore = [...BUILTIN_IGNORE, ...(options.config?.ignore ?? [])];
+  return paths.filter((item) => !isIgnored(pathOf(item), ignore));
 }
 
 export function hasSkipLabel(
   labels: string[],
-  skipLabels: string[] = DEFAULT_CONFIG.skip_labels
+  skipLabels: readonly string[] = []
 ): boolean {
   if (skipLabels.length === 0) {
     return false;

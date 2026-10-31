@@ -1,16 +1,25 @@
 // Deterministic checks that keep generated text tied to the input. The model
 // may paraphrase, but every concrete claim (a path, a backticked identifier, a
 // number) must appear in the diff, the commits or the PR text.
-
-export interface FileChange {
-  added: number;
-  path: string;
-  removed: number;
-}
+import {
+  BACKTICK_PATTERN,
+  MAX_LISTED_FILES,
+  NUMBER_PATTERN,
+  PATH_EXTENSION,
+  RISK_SIGNAL_PATH,
+  RISK_SIGNAL_TEXT,
+  SENTENCE_BREAK,
+  TEST_SIGNAL_PATH,
+  TEST_SIGNAL_TEXT,
+  WHITESPACE,
+  WORD_EDGE_END,
+  WORD_EDGE_START,
+} from "./constants";
+import type { FileChange, FileDiff } from "./types";
 
 /** Per-file line counts from unified diff text. */
 export function fileChanges(
-  files: Array<{ diff: string; path: string }>
+  files: Pick<FileDiff, "diff" | "path">[]
 ): FileChange[] {
   return files.map((f) => {
     let added = 0;
@@ -26,8 +35,6 @@ export function fileChanges(
   });
 }
 
-const MAX_LISTED_FILES = 50;
-
 /** One bullet per changed file, written by code. */
 export function changesLines(files: FileChange[]): string[] {
   const lines = files
@@ -39,22 +46,21 @@ export function changesLines(files: FileChange[]): string[] {
   return lines;
 }
 
-const PATH_EXTENSION =
-  /\.(ts|tsx|js|jsx|mjs|cjs|json|ya?ml|md|mdx|go|py|rs|java|kt|rb|sh|css|scss|html|toml|lock|snap|sql|proto|graphql)$/i;
-
 /** Claims a sentence makes that can be checked against the input. */
 export function claimTokens(text: string): string[] {
   const tokens = new Set<string>();
-  for (const m of text.matchAll(/`([^`]+)`/g)) {
+  for (const m of text.matchAll(BACKTICK_PATTERN)) {
     tokens.add(m[1].trim());
   }
-  for (const word of text.split(/\s+/)) {
-    const cleaned = word.replace(/^[("'`[]+|[)"'`\].,;:!?]+$/g, "");
+  for (const word of text.split(WHITESPACE)) {
+    const cleaned = word
+      .replace(WORD_EDGE_START, "")
+      .replace(WORD_EDGE_END, "");
     if (cleaned.includes("/") || PATH_EXTENSION.test(cleaned)) {
       tokens.add(cleaned);
     }
   }
-  for (const m of text.matchAll(/\b\d{2,}\b/g)) {
+  for (const m of text.matchAll(NUMBER_PATTERN)) {
     tokens.add(m[0]);
   }
   tokens.delete("");
@@ -75,7 +81,7 @@ export function groundSentences(
   source: string
 ): { dropped: number; text: string } {
   const sentences = text
-    .split(/(?<=[.!?])\s+|\n+/)
+    .split(SENTENCE_BREAK)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
   const kept = sentences.filter((s) =>
@@ -87,17 +93,13 @@ export function groundSentences(
 /** A test file was changed, or the PR text talks about tests. */
 export function hasTestSignal(paths: string[], prText: string): boolean {
   return (
-    paths.some((p) =>
-      /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[a-z]+$/i.test(p)
-    ) || /\btests?\b|\bspec\b|\bqa\b/i.test(prText)
+    paths.some((p) => TEST_SIGNAL_PATH.test(p)) || TEST_SIGNAL_TEXT.test(prText)
   );
 }
 
 /** A change that often carries risk: migrations, schemas, config, or an explicit breaking marker. */
 export function hasRiskSignal(paths: string[], prText: string): boolean {
   return (
-    paths.some((p) =>
-      /(^|\/)(migrations?|config)\/|\.sql$|\.env|schema\./i.test(p)
-    ) || /\b(breaking|migration|deprecat\w*|rollback)\b/i.test(prText)
+    paths.some((p) => RISK_SIGNAL_PATH.test(p)) || RISK_SIGNAL_TEXT.test(prText)
   );
 }

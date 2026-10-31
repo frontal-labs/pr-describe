@@ -12,10 +12,13 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serve, spawn } from "bun";
+import { z } from "zod";
 import { renderMarkerBlock } from "../src/markers";
-import { coerceRecord, recordToJson } from "../src/record";
+import { recordToJson } from "../src/record";
+import { ChangeRecordSchema } from "../src/types";
 
 const REPO = "/repos/o/r";
+const PatchBodySchema = z.object({ body: z.string() });
 const CLI = join(import.meta.dir, "..", "src", "cli.ts");
 
 const DIFF = [
@@ -45,7 +48,7 @@ function route(req: Request): Response | Promise<Response> {
   if (url.pathname === `${REPO}/pulls/7`) {
     if (req.method === "PATCH") {
       return (async () => {
-        const payload = (await req.json()) as { body: string };
+        const payload = PatchBodySchema.parse(await req.json());
         state.patchedBodies.push(payload.body);
         return json({ number: 7 });
       })();
@@ -77,7 +80,7 @@ function route(req: Request): Response | Promise<Response> {
     });
   }
   if (url.pathname === `${REPO}/pulls/5`) {
-    const record = coerceRecord({
+    const record = ChangeRecordSchema.parse({
       audience: "developer",
       summary_customer: "Faster CSV exports",
       summary_internal: "Faster CSV exports",

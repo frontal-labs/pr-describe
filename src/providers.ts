@@ -1,57 +1,51 @@
+import { createGgmlNode, type GgmlNode } from "ggml-node";
 import {
-  createGgmlNode,
-  type GgmlNode,
-  type JsonSchemaObject,
-} from "ggml-node";
-
-export interface TextInput {
-  prompt: string;
-  system: string;
-}
-
-export interface ObjectInput extends TextInput {
-  schema: JsonSchemaObject;
-  schemaName: string;
-}
-
-export interface Provider {
-  dispose(): Promise<void>;
-  generateObject(input: ObjectInput): Promise<unknown>;
-  generateText(input: TextInput): Promise<string>;
-  name: string;
-}
-
-export interface ProviderOptions {
-  model?: string;
-}
-
-/** Model ids ggml-node can load from its registry. */
-export const SUPPORTED_MODELS = [
-  "qwen2.5-0.5b",
-  "qwen2.5-1.5b",
-  "smollm2-360m",
-] as const;
-export type SupportedModel = (typeof SUPPORTED_MODELS)[number];
-
-export const DEFAULT_MODEL: SupportedModel = "qwen2.5-1.5b";
+  CONTEXT_SIZE,
+  DEFAULT_MODEL,
+  GENERATION_SEED,
+  GGML_GPU_MODE,
+  GGML_NAME,
+  GGML_THREADS,
+  MAX_OUTPUT_TOKENS,
+  MOCK_NAME,
+  TEMPERATURE,
+} from "./constants";
+import {
+  type ModelId,
+  ModelIdSchema,
+  type ObjectInput,
+  type Provider,
+  ProviderNameSchema,
+  type ProviderOptions,
+  type TextInput,
+} from "./types";
 
 /**
- * Context window for every request. ggml-node defaults to 4096, which is too
- * small for a 4000-token diff chunk plus the instructions and the output.
+ * The model id to load. Unset means the default. Anything else must be one of
+ * the supported ids, or this throws with the full list.
  */
-export const CONTEXT_SIZE = 8192;
-
-/** Fixed seed and zero temperature make output reproducible between runs. */
-const GENERATION_SEED = 42;
-
-/** Upper bound on generated tokens for one request. */
-const MAX_OUTPUT_TOKENS = 1536;
+export function resolveModel(model: string | undefined): ModelId {
+  if (model === undefined) {
+    return DEFAULT_MODEL;
+  }
+  const result = ModelIdSchema.safeParse(model);
+  if (!result.success) {
+    throw new Error(
+      `Unknown model "${model}". Supported: ${ModelIdSchema.options.join(", ")}`
+    );
+  }
+  return result.data;
+}
 
 export function getProvider(
   name: string,
   options: ProviderOptions = {}
 ): Provider {
-  switch (name) {
+  const parsed = ProviderNameSchema.safeParse(name);
+  if (!parsed.success) {
+    throw new Error(`Unknown provider: ${name}`);
+  }
+  switch (parsed.data) {
     case "ggml-node":
       return new GgmlProvider(options);
     case "mock":
@@ -61,25 +55,13 @@ export function getProvider(
   }
 }
 
-export function resolveModel(model: string | undefined): SupportedModel {
-  if (model === undefined) {
-    return DEFAULT_MODEL;
-  }
-  if (!(SUPPORTED_MODELS as readonly string[]).includes(model)) {
-    throw new Error(
-      `Unknown model "${model}". Supported: ${SUPPORTED_MODELS.join(", ")}`
-    );
-  }
-  return model as SupportedModel;
-}
-
 /**
  * Runs a small language model inside the Node process via ggml-node. The model
  * loads lazily on first use and is cached on disk by ggml-node.
  */
 export class GgmlProvider implements Provider {
-  name = "ggml-node";
-  private model: SupportedModel;
+  name = GGML_NAME;
+  private model: ModelId;
   private node: GgmlNode | null = null;
 
   constructor(options: ProviderOptions = {}) {
@@ -90,9 +72,9 @@ export class GgmlProvider implements Provider {
     if (!this.node) {
       this.node = createGgmlNode({
         contextSize: CONTEXT_SIZE,
-        gpu: "auto",
+        gpu: GGML_GPU_MODE,
         model: this.model,
-        threads: "auto",
+        threads: GGML_THREADS,
       });
     }
     return this.node;
@@ -104,7 +86,7 @@ export class GgmlProvider implements Provider {
       prompt,
       seed: GENERATION_SEED,
       system,
-      temperature: 0,
+      temperature: TEMPERATURE,
     });
     return out.text.trim();
   }
@@ -122,7 +104,7 @@ export class GgmlProvider implements Provider {
       schemaName,
       seed: GENERATION_SEED,
       system,
-      temperature: 0,
+      temperature: TEMPERATURE,
     });
     return out.object;
   }
@@ -135,18 +117,22 @@ export class GgmlProvider implements Provider {
   }
 }
 
+/** Fixed output for tests and offline runs. Not a real description. */
 export class MockProvider implements Provider {
-  name = "mock";
+  name = MOCK_NAME;
 
   async generateText(_input: TextInput): Promise<string> {
     return "Mock change description.";
   }
 
-  async generateObject(_input: ObjectInput): Promise<unknown> {
+  async generateObject(input: ObjectInput): Promise<unknown> {
+    // Answer the question that was asked: the second opinion wants only type and scope.
+    if (input.schemaName === "type_and_scope") {
+      return { scope: "core", type: "feature" };
+    }
     return {
       audience: "internal",
       breaking: false,
-      changes: ["Mock change"],
       evidence: [],
       links: [],
       risks: ["None"],

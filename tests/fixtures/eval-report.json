@@ -12,7 +12,7 @@
         "scope": "billing",
         "breaking": false
       },
-      "ms": 28101,
+      "ms": 27425,
       "name": "001-billing-pricing",
       "review": ["type", "scope"],
       "ungrounded": []
@@ -29,9 +29,9 @@
         "scope": "api",
         "breaking": false
       },
-      "ms": 12532,
+      "ms": 13403,
       "name": "002-api-timeout",
-      "review": ["type"],
+      "review": [],
       "ungrounded": []
     },
     {
@@ -46,7 +46,7 @@
         "scope": "cache",
         "breaking": false
       },
-      "ms": 14492,
+      "ms": 14410,
       "name": "003-cache-lru",
       "review": ["type", "scope"],
       "ungrounded": []
@@ -63,7 +63,7 @@
         "scope": "auth",
         "breaking": false
       },
-      "ms": 17224,
+      "ms": 13953,
       "name": "004-auth-refactor",
       "review": ["scope"],
       "ungrounded": []
@@ -80,7 +80,7 @@
         "scope": "readme",
         "breaking": false
       },
-      "ms": 15081,
+      "ms": 11478,
       "name": "005-docs-update",
       "review": ["scope"],
       "ungrounded": []
@@ -97,9 +97,9 @@
         "scope": "api",
         "breaking": true
       },
-      "ms": 14776,
+      "ms": 11919,
       "name": "006-api-breaking",
-      "review": ["type"],
+      "review": ["type", "scope"],
       "ungrounded": []
     },
     {
@@ -114,16 +114,16 @@
         "scope": "ci",
         "breaking": false
       },
-      "ms": 19130,
+      "ms": 14351,
       "name": "007-ci-workflow",
-      "review": [],
+      "review": ["scope"],
       "ungrounded": []
     },
     {
       "actual": {
         "breaking": false,
         "scope": "ui",
-        "type": "fix"
+        "type": "refactor"
       },
       "droppedSentences": 0,
       "expected": {
@@ -131,9 +131,9 @@
         "scope": "ui",
         "breaking": false
       },
-      "ms": 18075,
+      "ms": 14459,
       "name": "008-ui-button",
-      "review": ["type"],
+      "review": [],
       "ungrounded": []
     },
     {
@@ -148,7 +148,7 @@
         "scope": "deps",
         "breaking": false
       },
-      "ms": 40663,
+      "ms": 10581,
       "name": "009-deps-update",
       "review": ["type"],
       "ungrounded": []
@@ -165,7 +165,7 @@
         "scope": "ui",
         "breaking": false
       },
-      "ms": 15005,
+      "ms": 12886,
       "name": "010-ui-form-input",
       "review": ["type"],
       "ungrounded": []
@@ -173,8 +173,8 @@
     {
       "actual": {
         "breaking": false,
-        "scope": "api",
-        "type": "refactor"
+        "scope": "ci",
+        "type": "internal"
       },
       "droppedSentences": 0,
       "expected": {
@@ -183,16 +183,16 @@
         "breaking": false,
         "title": "Rename fmtDate to formatDate"
       },
-      "ms": 77916,
+      "ms": 14458,
       "name": "011-rename-symbol",
-      "review": ["scope"],
+      "review": ["type", "scope"],
       "ungrounded": []
     },
     {
       "actual": {
         "breaking": false,
         "scope": "billing",
-        "type": "feature"
+        "type": "internal"
       },
       "droppedSentences": 0,
       "expected": {
@@ -201,7 +201,7 @@
         "breaking": false,
         "title": "Add a rounding test for pricing"
       },
-      "ms": 34559,
+      "ms": 17966,
       "name": "012-tests-only",
       "review": [],
       "ungrounded": []
@@ -219,7 +219,7 @@
         "breaking": false,
         "title": "Bump zod to 4.6.7"
       },
-      "ms": 26413,
+      "ms": 10192,
       "name": "013-lockfile-only",
       "review": [],
       "ungrounded": []
@@ -237,7 +237,7 @@
         "breaking": true,
         "title": "Remove the legacy v1 export endpoint (breaking)"
       },
-      "ms": 25465,
+      "ms": 10061,
       "name": "014-remove-endpoint",
       "review": [],
       "ungrounded": []
@@ -255,7 +255,7 @@
         "breaking": false,
         "title": "Speed up findAll with a lookup map"
       },
-      "ms": 25874,
+      "ms": 10272,
       "name": "015-perf-lookup",
       "review": ["type", "scope"],
       "ungrounded": []
@@ -273,7 +273,7 @@
         "breaking": false,
         "title": "Fix crash when session is missing"
       },
-      "ms": 19013,
+      "ms": 8332,
       "name": "016-fix-null-crash",
       "review": ["scope"],
       "ungrounded": []
@@ -288,7 +288,7 @@
     "errors": 0,
     "model": "default",
     "review": {
-      "flagged": 12,
+      "flagged": 11,
       "total": 16
     },
     "scope": {

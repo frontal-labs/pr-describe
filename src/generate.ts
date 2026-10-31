@@ -1,180 +1,61 @@
-import type { JsonSchemaObject } from "ggml-node";
-import type { ResolvedConfig } from "./config";
+import {
+  BREAKING_TEXT,
+  BULLET_PREFIX,
+  DIFF_CHAR_LIMIT,
+  DIFF_LEFT_PATH,
+  DOCS_PATHS,
+  EVIDENCE_PREFIX,
+  INTERNAL_PATHS,
+  MAX_GENERATION_ATTEMPTS,
+  NONE_LISTED,
+  NOT_STATED,
+  PLACEHOLDER_VALUES,
+  SCOPE_NAME_PATTERN,
+  SECOND_OPINION_DIFF_CHARS,
+  SECOND_OPINION_SYSTEM,
+  SECTION_HEADINGS,
+  SYSTEM_PROMPT,
+  TEST_FILE_NOTE,
+  TEST_PATHS,
+  TEST_SIGNAL_PATH,
+} from "./constants";
 import { matchGlob } from "./filter";
 import {
   changesLines,
-  type FileChange,
   fileChanges,
   groundSentences,
   hasRiskSignal,
   hasTestSignal,
   isGrounded,
 } from "./grounding";
-import type { Provider } from "./providers";
+import type { Provider } from "./types";
 import {
   type ChangeRecord,
+  ChangeRecordSchema,
   type ChangeType,
-  type CoerceInput,
-  coerceRecord,
-  VALID_AUDIENCES,
-  VALID_TYPES,
-  validateRecord,
-} from "./record";
+  type FileChange,
+  type GenerateInput,
+  type GenerateResult,
+  MODEL_OUTPUT_GRAMMAR,
+  type ModelOutput,
+  ModelOutputSchema,
+  type ResolvedConfig,
+  type SectionFields,
+  TYPE_SCOPE_GRAMMAR,
+  TypeScopeSchema,
+} from "./types";
+import { asError, formatIssues } from "./validate";
 
-export interface GenerateResult {
-  description: string;
-  /** Sentences and items removed because they were not grounded in the input. */
-  droppedSentences: number;
-  record: ChangeRecord;
-  /** Fields the model could not confirm: "type" and/or "scope". Empty when confirmed. */
-  review: string[];
-}
-
-export interface GenerateInput {
-  body: string;
-  commits: string[];
-  config: ResolvedConfig;
-  /** Changed files after filtering, with their full diffs. Facts come from here. */
-  files: Array<{ diff: string; path: string }>;
-  issueNumbers: string[];
-  /** Text the model sees. For large PRs this is the chunk summaries. */
-  promptDiff: string;
-  prTemplate: string | null;
-  title: string;
-}
-
-/**
- * The prompt diff is cut to this many characters. It matches the 4000-token
- * chunk budget (about 4 characters per token) so the prompt fits the context.
- */
-const DIFF_CHAR_LIMIT = 16_000;
-
-const SYSTEM_PROMPT = `You write PR descriptions from a diff. Output only the JSON object.
-
-Rules:
-- Describe only what the diff changes. Do not claim tests, issues, reviews or deployments unless the input shows them.
-- "summary" is one or two plain sentences. Name only files, symbols and numbers that appear in the input.
-- "testing" and "risks" are lists. Leave them empty unless the input shows tests or risks. Each item is one short sentence.
-- "evidence" lists the exact file paths and symbols your summary refers to, copied from the diff.
-- "scope" is exactly one name from the scope list. If the list is empty, use a short area name such as api, ui or ci.
-- "type" is exactly one of these, chosen by what the change does:
-  - feature: adds new behavior or a new capability.
-  - fix: corrects behavior that was wrong.
-  - perf: makes something faster or uses less memory or resources, with the same behavior.
-  - refactor: restructures code with the same behavior.
-  - docs: changes only documentation or comments.
-  - breaking: removes or changes behavior that callers depend on.
-  - internal: CI, dependencies, build or tooling changes with no product behavior change.
-- Be factual and concise. No speculation.`;
-
-/** A second, differently worded classification, used to cross-check type and scope. */
-const SECOND_OPINION_SYSTEM =
-  "Classify one code change. Answer with the change kind and the area of the code only.";
-
-const TYPE_SCOPE_SCHEMA: JsonSchemaObject = {
-  additionalProperties: false,
-  properties: {
-    scope: { type: "string" },
-    type: { enum: VALID_TYPES, type: "string" },
-  },
-  required: ["type", "scope"],
-  type: "object",
-};
-
-/**
- * Paths whose changes are unambiguous. A change that touches only these files
- * gets a fixed type; the small model is weak at this classification.
- */
-const DOCS_PATHS = ["**/*.md", "**/*.mdx", "docs/**", "CHANGELOG*"];
-const INTERNAL_PATHS = [
-  ".github/**",
-  ".changeset/**",
-  ".husky/**",
-  "**/*.lock",
-  "bun.lock",
-  "bun.lockb",
-  "package-lock.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "biome.json",
-  "bunfig.toml",
-  "tsconfig*.json",
-];
-
-/** Test-only changes have no product behavior change, so they are internal. */
-const TEST_PATHS = [
-  "**/*.test.*",
-  "**/*.spec.*",
-  "tests/**",
-  "test/**",
-  "__tests__/**",
-];
-
-/** The type when every changed path falls under one of the fixed groups. */
-export function typeFromPaths(paths: string[]): ChangeType | null {
-  if (paths.length === 0) {
-    return null;
-  }
-  const inAny = (p: string, globs: string[]) =>
-    globs.some((g) => matchGlob(p, g));
-  if (paths.every((p) => inAny(p, DOCS_PATHS))) {
-    return "docs";
-  }
-  if (paths.every((p) => inAny(p, INTERNAL_PATHS) || inAny(p, TEST_PATHS))) {
-    return "internal";
-  }
-  return null;
-}
-
-/** Markdown headings for the sections the description can have. */
-const SECTION_HEADINGS: Record<string, string> = {
-  changes: "Changes",
-  risks: "Risks",
-  summary: "Summary",
-  testing: "Testing",
-};
-
-/** JSON Schema the model output is constrained to. `changes` is written by code. */
-export const RECORD_SCHEMA: JsonSchemaObject = {
-  additionalProperties: false,
-  properties: {
-    audience: { enum: VALID_AUDIENCES, type: "string" },
-    breaking: { type: "boolean" },
-    evidence: { items: { type: "string" }, type: "array" },
-    links: { items: { type: "string" }, type: "array" },
-    risks: { items: { type: "string" }, type: "array" },
-    scope: { type: "string" },
-    summary: { type: "string" },
-    summary_customer: { type: "string" },
-    summary_internal: { type: "string" },
-    testing: { items: { type: "string" }, type: "array" },
-    type: { enum: VALID_TYPES, type: "string" },
-  },
-  required: [
-    "type",
-    "audience",
-    "scope",
-    "breaking",
-    "summary_customer",
-    "summary_internal",
-    "evidence",
-    "links",
-    "summary",
-    "testing",
-    "risks",
-  ],
-  type: "object",
-};
-
-const PLACEHOLDERS = new Set(["none", "n/a", "na", "null", "-", "not stated"]);
+/** Placeholder values that are never a real claim, evidence or list item. */
+const PLACEHOLDERS: ReadonlySet<string> = new Set(PLACEHOLDER_VALUES);
 
 /** Everything the grounding checks compare against. */
 interface Context {
   changes: FileChange[];
   paths: string[];
   prText: string;
-  scopes: Record<string, string[]>;
-  sections: string[];
+  scopes: ResolvedConfig["scopes"];
+  sections: ResolvedConfig["sections"];
   source: string;
 }
 
@@ -202,14 +83,13 @@ export async function generateDescription(
   };
   const prompt = buildPrompt(data);
 
-  // The schema constrains the shape, so a retry only helps when the content
+  // The grammar constrains the shape, so a retry only helps when the content
   // fails validation (for example an empty summary).
-  const maxAttempts = 2;
   let lastError: Error | null = null;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
     const raw = await provider.generateObject({
       prompt,
-      schema: RECORD_SCHEMA,
+      schema: MODEL_OUTPUT_GRAMMAR,
       schemaName: "change_record",
       system: SYSTEM_PROMPT,
     });
@@ -227,7 +107,7 @@ export async function generateDescription(
         review,
       };
     } catch (err) {
-      lastError = err as Error;
+      lastError = asError(err);
     }
   }
   throw new Error(
@@ -249,15 +129,16 @@ function buildPrompt(data: GenerateInput): string {
 }
 
 /**
- * Ask the model a second time, with different wording, about each field that
- * code cannot decide. A disagreement means the field is not confirmed.
+ * Classify `type` and `scope` a second time, with different wording, for each
+ * field that code cannot decide. A disagreement, or an invalid second answer,
+ * means the field is not confirmed.
  */
 async function checkUncertainFields(
   provider: Provider,
   data: GenerateInput,
   ctx: Context,
   record: ChangeRecord
-): Promise<string[]> {
+): Promise<Array<"type" | "scope">> {
   const needType = typeFromPaths(ctx.paths) === null;
   const needScope = scopeFromGlobs(ctx.paths, ctx.scopes) === null;
   if (!(needType || needScope)) {
@@ -268,58 +149,61 @@ async function checkUncertainFields(
       `Change title: ${data.title}`,
       `Changed files:\n${ctx.paths.join("\n")}`,
       `Areas: ${Object.keys(ctx.scopes).join(", ") || "(none)"}`,
-      `Diff excerpt:\n${data.promptDiff.slice(0, 4000)}`,
+      `Diff excerpt:\n${data.promptDiff.slice(0, SECOND_OPINION_DIFF_CHARS)}`,
     ].join("\n"),
-    schema: TYPE_SCOPE_SCHEMA,
+    schema: TYPE_SCOPE_GRAMMAR,
     schemaName: "type_and_scope",
     system: SECOND_OPINION_SYSTEM,
   });
-  const second = raw as { scope?: unknown; type?: unknown };
-  const review: string[] = [];
-  if (needType && second.type !== record.type) {
+  const second = TypeScopeSchema.safeParse(raw);
+  const review: Array<"type" | "scope"> = [];
+  if (!second.success) {
+    // An invalid second answer confirms nothing.
+    if (needType) {
+      review.push("type");
+    }
+    if (needScope) {
+      review.push("scope");
+    }
+    return review;
+  }
+  if (needType && second.data.type !== record.type) {
     review.push("type");
   }
   if (
     needScope &&
-    (typeof second.scope !== "string" ||
-      second.scope.trim().toLowerCase() !== record.scope.toLowerCase())
+    second.data.scope.trim().toLowerCase() !== record.scope.toLowerCase()
   ) {
     review.push("scope");
   }
   return review;
 }
 
-function withReviewBanner(description: string, review: string[]): string {
+function withReviewBanner(
+  description: string,
+  review: Array<"type" | "scope">
+): string {
   if (review.length === 0) {
     return description;
   }
-  const fields = review.join(" and ");
-  return `> **Needs review:** the ${fields} could not be confirmed. Two model checks disagreed.\n\n${description}`;
+  return `> **Needs review:** the ${review.join(" and ")} could not be confirmed. Two model checks disagreed.\n\n${description}`;
 }
 
 /**
- * Turn the model's raw JSON into a checked record and description. Every
- * claim is grounded in the input, or dropped. Facts that code can state
- * (the changed files and their line counts) are never taken from the model.
+ * Turn the model's raw output into a checked record and description. The
+ * output is validated against ModelOutputSchema first. Every claim is then
+ * grounded in the input, or dropped. Facts that code can state (the changed
+ * files and their line counts) are never taken from the model.
  */
 function parseOutput(
   raw: unknown,
   ctx: Context
 ): { description: string; droppedSentences: number; record: ChangeRecord } {
-  if (raw === null || typeof raw !== "object") {
-    throw new Error("Model output is not an object");
+  const parsed = ModelOutputSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`Model output is invalid: ${formatIssues(parsed.error)}`);
   }
-  const { summary, testing, risks, ...fields } = raw as CoerceInput &
-    Record<string, unknown>;
-  if (typeof summary !== "string" || summary.trim() === "") {
-    throw new Error("Model output has an empty summary");
-  }
-
-  const record = coerceRecord(fields as CoerceInput);
-  const errors = validateRecord(record);
-  if (errors.length > 0) {
-    throw new Error(`Validation errors: ${JSON.stringify(errors)}`);
-  }
+  const output: ModelOutput = parsed.data;
 
   let dropped = 0;
   const grounded = (text: string): string => {
@@ -331,63 +215,76 @@ function parseOutput(
     items.map(grounded).filter((item) => item.length > 0);
 
   const groundedSummary =
-    grounded(summary) || `Updates ${ctx.changes.length} file(s).`;
+    grounded(output.summary) || `Updates ${ctx.changes.length} file(s).`;
   const groundedField = (text: string) => grounded(text) || groundedSummary;
 
-  const finalRecord: ChangeRecord = {
-    ...record,
-    breaking: record.breaking && /\bbreaking\b/i.test(ctx.prText),
+  const record = ChangeRecordSchema.parse({
+    audience: output.audience,
+    breaking: output.breaking && BREAKING_TEXT.test(ctx.prText),
     evidence: [
       ...new Set(
-        record.evidence
-          .map((e) => e.trim().replace(/^[ab]\//, ""))
-          .filter(
-            (e) =>
-              e.length > 0 &&
-              !PLACEHOLDERS.has(e.toLowerCase()) &&
-              (ctx.paths.includes(e) || isGrounded(e, ctx.source))
-          )
+        output.evidence.map(cleanEvidence).filter((e) => isEvidence(e, ctx))
       ),
     ],
-    links: record.links.filter((l) => isGrounded(l, ctx.source)),
-    scope: resolveScope(ctx.paths, ctx.scopes, record.scope),
-    summary_customer: groundedField(record.summary_customer),
-    summary_internal: groundedField(record.summary_internal),
-    type: typeFromPaths(ctx.paths) ?? record.type,
-  };
+    links: output.links.filter((l) => isGrounded(l, ctx.source)),
+    scope: resolveScope(ctx.paths, ctx.scopes, output.scope),
+    summary_customer: groundedField(output.summary_customer),
+    summary_internal: groundedField(output.summary_internal),
+    type: typeFromPaths(ctx.paths) ?? output.type,
+  });
 
   const description = renderDescription(
     {
       changes: changesLines(ctx.changes),
       risks: hasRiskSignal(ctx.paths, ctx.prText)
-        ? groundItems(listOf(risks))
+        ? groundItems(listOf(output.risks))
         : [],
       summary: groundedSummary,
-      testing: hasTestSignal(ctx.paths, ctx.prText)
-        ? groundItems(listOf(testing))
-        : [],
+      testing: testingItems(output.testing, ctx),
     },
     ctx.sections
   );
-  return { description, droppedSentences: dropped, record: finalRecord };
+  return { description, droppedSentences: dropped, record };
+}
+
+/** Drop the git "a/" or "b/" prefix and surrounding spaces. */
+function cleanEvidence(entry: string): string {
+  return entry.trim().replace(EVIDENCE_PREFIX, "");
+}
+
+/** Evidence counts when it is a changed path, or text the input contains. */
+function isEvidence(entry: string, ctx: Context): boolean {
+  if (entry.length === 0 || PLACEHOLDERS.has(entry.toLowerCase())) {
+    return false;
+  }
+  return ctx.paths.includes(entry) || isGrounded(entry, ctx.source);
+}
+
+/**
+ * The Testing items. The model's grounded items come first. If it names none,
+ * each changed test file is listed, so the section still reports what the diff
+ * shows. With no signal at all, the list is empty.
+ */
+function testingItems(modelItems: string[], ctx: Context): string[] {
+  if (!hasTestSignal(ctx.paths, ctx.prText)) {
+    return [];
+  }
+  const grounded = listOf(modelItems)
+    .map((item) => groundSentences(item, ctx.source).text)
+    .filter((item) => item.length > 0);
+  if (grounded.length > 0) {
+    return grounded;
+  }
+  return ctx.paths
+    .filter((p) => TEST_SIGNAL_PATH.test(p))
+    .map((p) => `${TEST_FILE_NOTE}: \`${p}\``);
 }
 
 /** Keep non-empty string items, strip any bullet the model added. */
-function listOf(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .filter((v): v is string => typeof v === "string")
-    .map((v) => v.trim().replace(/^[-*]\s+/, ""))
+function listOf(items: string[]): string[] {
+  return items
+    .map((v) => v.trim().replace(BULLET_PREFIX, ""))
     .filter((v) => v.length > 0 && !PLACEHOLDERS.has(v.toLowerCase()));
-}
-
-export interface SectionFields {
-  changes: string[];
-  risks: string[];
-  summary: string;
-  testing: string[];
 }
 
 /**
@@ -397,22 +294,18 @@ export interface SectionFields {
  */
 export function renderDescription(
   fields: SectionFields,
-  sections: string[]
+  sections: ResolvedConfig["sections"]
 ): string {
   const blocks: string[] = [];
   for (const key of sections) {
-    const heading = SECTION_HEADINGS[key];
-    if (!heading) {
-      continue;
-    }
     const body =
       key === "summary"
         ? fields.summary
         : bulletsOrPlaceholder(
-            fields[key as "changes" | "risks" | "testing"],
-            key === "changes" ? "- None" : "- Not stated"
+            fields[key],
+            key === "changes" ? NONE_LISTED : NOT_STATED
           );
-    blocks.push(`## ${heading}\n\n${body}`);
+    blocks.push(`## ${SECTION_HEADINGS[key]}\n\n${body}`);
   }
   return blocks.join("\n\n");
 }
@@ -423,13 +316,29 @@ function bulletsOrPlaceholder(items: string[], placeholder: string): string {
 
 /** Paths of the files a unified diff touches. */
 export function changedPaths(diff: string): string[] {
-  return [...diff.matchAll(/^diff --git a\/(.+?) b\//gm)].map((m) => m[1]);
+  return [...diff.matchAll(DIFF_LEFT_PATH)].map((m) => m[1]);
+}
+
+/** Test-only and CI/lockfile-only changes are fixed by path; anything else is left to the model. */
+export function typeFromPaths(paths: string[]): ChangeType | null {
+  if (paths.length === 0) {
+    return null;
+  }
+  const inAny = (p: string, globs: readonly string[]) =>
+    globs.some((g) => matchGlob(p, g));
+  if (paths.every((p) => inAny(p, DOCS_PATHS))) {
+    return "docs";
+  }
+  if (paths.every((p) => inAny(p, INTERNAL_PATHS) || inAny(p, TEST_PATHS))) {
+    return "internal";
+  }
+  return null;
 }
 
 /** The scope whose globs match the most changed files, or null when none match. */
 export function scopeFromGlobs(
   paths: string[],
-  scopes: Record<string, string[]>
+  scopes: ResolvedConfig["scopes"]
 ): string | null {
   let best: string | null = null;
   let bestCount = 0;
@@ -453,7 +362,7 @@ export function scopeFromGlobs(
  */
 export function resolveScope(
   paths: string[],
-  scopes: Record<string, string[]>,
+  scopes: ResolvedConfig["scopes"],
   modelScope: string
 ): string {
   const fromGlobs = scopeFromGlobs(paths, scopes);
@@ -465,7 +374,7 @@ export function resolveScope(
   if (names.includes(candidate)) {
     return candidate;
   }
-  if (names.length === 0 && /^[a-z0-9][a-z0-9_-]*$/i.test(candidate)) {
+  if (names.length === 0 && SCOPE_NAME_PATTERN.test(candidate)) {
     return candidate;
   }
   return "core";

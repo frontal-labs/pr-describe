@@ -4,10 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { on, parseArgs, value } from "../src/args";
 import { renderChangeset, renderMarkdown } from "../src/changelog";
-import { chunkDiff, estimateTokens, MAX_SUMMARY_CALLS } from "../src/chunk";
+import { chunkDiff, estimateTokens } from "../src/chunk";
 import { prNumbersFromMessages } from "../src/collect";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "../src/config";
-import { type DescribeOutcome, runDescribe } from "../src/describe";
+import {
+  CONFIG_FILE,
+  CONTEXT_SIZE,
+  DEFAULT_MODEL,
+  MAX_SUMMARY_CALLS,
+} from "../src/constants";
+import { runDescribe } from "../src/describe";
 import { filterPaths, hasSkipLabel, matchGlob } from "../src/filter";
 import {
   changedPaths,
@@ -21,7 +26,7 @@ import {
   hasRiskSignal,
   hasTestSignal,
 } from "../src/grounding";
-import { CONFIG_FILE, loadConfig, parseConfig } from "../src/loader";
+import { DEFAULT_CONFIG, loadConfig, parseConfig } from "../src/loader";
 import {
   appendRegenerateCheckbox,
   extractMarkerBlock,
@@ -30,14 +35,17 @@ import {
   renderMarkerBlock,
   replaceOrInsertMarkerBlock,
 } from "../src/markers";
+import { getProvider, resolveModel } from "../src/providers";
+import { recordToJson } from "../src/record";
 import {
-  CONTEXT_SIZE,
-  DEFAULT_MODEL,
-  getProvider,
+  type ChangeRecord,
+  ChangeRecordFieldsSchema,
+  ChangeRecordSchema,
+  type DescribeOutcome,
+  ModelOutputSchema,
   type Provider,
-  resolveModel,
-} from "../src/providers";
-import { coerceRecord, recordToJson, validateRecord } from "../src/record";
+  type ResolvedConfig,
+} from "../src/types";
 
 describe("filter", () => {
   it("ignores lockfiles", () => {
@@ -147,7 +155,7 @@ describe("markers", () => {
 
 describe("record", () => {
   it("validates a good record", () => {
-    const errors = validateRecord({
+    const result = ChangeRecordSchema.safeParse({
       audience: "internal",
       breaking: false,
       evidence: ["a.ts"],
@@ -158,11 +166,11 @@ describe("record", () => {
       summary_internal: "x",
       type: "feature",
     });
-    expect(errors).toEqual([]);
+    expect(result.success).toBe(true);
   });
 
   it("rejects bad type", () => {
-    const errors = validateRecord({
+    const result = ChangeRecordSchema.safeParse({
       audience: "internal",
       breaking: false,
       evidence: [],
@@ -173,11 +181,11 @@ describe("record", () => {
       summary_internal: "x",
       type: "bogus",
     });
-    expect(errors.length).toBeGreaterThan(0);
+    expect(result.success).toBe(false);
   });
 
-  it("coerces partial", () => {
-    const record = coerceRecord({ type: "fix" });
+  it("fills defaults for a partial stored record", () => {
+    const record = ChangeRecordFieldsSchema.parse({ type: "fix" });
     expect(record.type).toBe("fix");
     expect(record.audience).toBe("internal");
     expect(record.scope).toBe("core");
@@ -253,9 +261,7 @@ describe("provider", () => {
       schemaName: "change_record",
       system: "",
     });
-    expect(validateRecord(coerceRecord(raw as Record<string, never>))).toEqual(
-      []
-    );
+    expect(ModelOutputSchema.safeParse(raw).success).toBe(true);
     await provider.dispose();
   });
 });
@@ -286,11 +292,16 @@ describe("generateDescription", () => {
     testing: [],
     type: "feature",
   };
+  // Answers each call as the model would: the record for the record schema,
+  // and a type and scope for the second opinion.
   const provider = (out: () => unknown): Provider => ({
     dispose: async () => {
       // no model to release
     },
-    generateObject: async () => out(),
+    generateObject: async (input) =>
+      input.schemaName === "type_and_scope"
+        ? { scope: "core", type: "feature" }
+        : out(),
     generateText: async () => "",
     name: "fake",
   });
@@ -367,7 +378,9 @@ describe("generateDescription", () => {
       calls++;
       return { ...valid, summary: "   " };
     });
-    await expect(generateDescription(p, data)).rejects.toThrow(/empty summary/);
+    await expect(generateDescription(p, data)).rejects.toThrow(
+      /summary must not be empty/
+    );
     expect(calls).toBe(2);
   });
 });
@@ -508,7 +521,9 @@ describe("config", () => {
 
 describe("record output", () => {
   it("renders the record as JSON without the schema field", () => {
-    const json = JSON.parse(recordToJson(coerceRecord({ type: "fix" })));
+    const json = JSON.parse(
+      recordToJson(ChangeRecordSchema.parse({ type: "fix" }))
+    );
     expect(json.type).toBe("fix");
     expect(json.schema).toBeUndefined();
   });
@@ -517,7 +532,7 @@ describe("record output", () => {
 describe("changelog", () => {
   const entry = (n: number, type: string, breaking = false) => ({
     prNumber: n,
-    record: coerceRecord({
+    record: ChangeRecordSchema.parse({
       audience: "developer",
       breaking,
       summary_customer: `c${n}`,
@@ -568,7 +583,7 @@ describe("changelog", () => {
 
 describe("marker round trip", () => {
   it("reads back the record JSON written into the block", () => {
-    const record = coerceRecord({
+    const record: ChangeRecord = ChangeRecordSchema.parse({
       audience: "developer",
       summary_customer: "x",
       type: "fix",
@@ -616,9 +631,12 @@ describe("second opinion on uncertain fields", () => {
       dispose: async () => {
         // no model to release
       },
-      generateObject: async () => {
+      generateObject: async (input) => {
         calls++;
-        return calls === 1 ? first : { scope: "api", type: "fix" };
+        if (input.schemaName === "type_and_scope") {
+          return { scope: "api", type: "fix" };
+        }
+        return first;
       },
       generateText: async () => "",
       name: "fake",
@@ -635,9 +653,11 @@ describe("second opinion on uncertain fields", () => {
       dispose: async () => {
         // no model to release
       },
-      generateObject: async () => {
+      generateObject: async (input) => {
         calls++;
-        return { ...first, scope: "docs" };
+        return input.schemaName === "type_and_scope"
+          ? { scope: "docs", type: "docs" }
+          : { ...first, scope: "docs" };
       },
       generateText: async () => "",
       name: "fake",
@@ -761,5 +781,65 @@ describe("arguments", () => {
 
   it("defaults the command to describe", () => {
     expect(parseArgs(["--dry-run"]).command).toBe("describe");
+  });
+});
+
+describe("testing section", () => {
+  const config: ResolvedConfig = { ...DEFAULT_CONFIG, scopes: {} };
+  const valid = {
+    audience: "developer",
+    breaking: false,
+    evidence: [],
+    links: [],
+    risks: [],
+    scope: "core",
+    summary: "Adds x.",
+    summary_customer: "Adds x",
+    summary_internal: "Adds x",
+    testing: [],
+    type: "feature",
+  };
+  const provider: Provider = {
+    dispose: async () => {
+      // no model to release
+    },
+    generateObject: async (input) =>
+      input.schemaName === "type_and_scope"
+        ? { scope: "core", type: "feature" }
+        : valid,
+    generateText: async () => "",
+    name: "fake",
+  };
+
+  it("lists changed test files when the model names no tests", async () => {
+    const diff = "diff --git a/tests/x.test.ts b/tests/x.test.ts\n+x\n";
+    const result = await generateDescription(provider, {
+      body: "",
+      commits: ["fix: x"],
+      config,
+      files: [{ diff, path: "tests/x.test.ts" }],
+      issueNumbers: [],
+      promptDiff: diff,
+      prTemplate: null,
+      title: "t",
+    });
+    expect(result.description).toContain(
+      "## Testing\n\n- Test file changed: `tests/x.test.ts`"
+    );
+  });
+
+  it("says Not stated when no test file changed and the model names no tests", async () => {
+    const diff = "diff --git a/src/x.ts b/src/x.ts\n+x\n";
+    const result = await generateDescription(provider, {
+      body: "",
+      commits: ["fix: x"],
+      config,
+      files: [{ diff, path: "src/x.ts" }],
+      issueNumbers: [],
+      promptDiff: diff,
+      prTemplate: null,
+      title: "t",
+    });
+    expect(result.description).toContain("## Testing\n\n- Not stated");
   });
 });

@@ -1,81 +1,77 @@
-import type { Audience, ChangeRecord, ChangeType } from "./record";
+import {
+  CHANGELOG_TYPE_ORDER,
+  DEFAULT_CHANGESET_BUMP_MINOR,
+  DEFAULT_CHANGESET_BUMP_PATCH,
+} from "./constants";
+import type {
+  Audience,
+  ChangelogEntry,
+  ChangelogFormat,
+  ChangelogOptions,
+  ChangeRecord,
+  ChangeType,
+} from "./types";
 
-export interface ChangelogOptions {
-  audience?: Audience;
-  format?: ChangelogFormat;
-  from: string;
-  /** Required for the changeset format: the package the changeset bumps. */
-  packageName?: string;
-  polish?: boolean;
-  /** e.g. https://github.com/owner/repo, used to link PR numbers. */
-  repoUrl?: string;
-  to: string;
+/** Records that are published. Internal-audience records never reach a changelog. */
+function published(records: ChangelogEntry[]): ChangelogEntry[] {
+  return records.filter((r) => r.record.audience !== "internal");
 }
 
-export interface RecordWithPR {
-  prNumber: number;
-  record: ChangeRecord;
-  title: string;
-}
-
-const TYPE_ORDER: ChangeType[] = [
-  "breaking",
-  "feature",
-  "fix",
-  "perf",
-  "refactor",
-  "docs",
-  "internal",
-];
-
+/** Group records by type, in CHANGELOG_TYPE_ORDER. A breaking record goes under "breaking". */
 export function groupRecords(
-  records: RecordWithPR[]
-): Map<ChangeType, RecordWithPR[]> {
-  const groups = new Map<ChangeType, RecordWithPR[]>();
-  for (const t of TYPE_ORDER) {
+  records: ChangelogEntry[]
+): Map<ChangeType, ChangelogEntry[]> {
+  const groups = new Map<ChangeType, ChangelogEntry[]>();
+  for (const t of CHANGELOG_TYPE_ORDER) {
     groups.set(t, []);
   }
   for (const r of records) {
-    if (r.record.breaking && r.record.type !== "breaking") {
-      const list = groups.get("breaking")!;
-      list.push(r);
-      continue;
-    }
-    const list = groups.get(r.record.type);
-    if (list) {
-      list.push(r);
-    }
+    const group: ChangeType =
+      r.record.breaking && r.record.type !== "breaking"
+        ? "breaking"
+        : r.record.type;
+    groups.get(group)?.push(r);
   }
   return groups;
 }
 
+function summaryOf(
+  record: ChangeRecord,
+  audience: Audience | undefined
+): string {
+  return audience === "customer"
+    ? record.summary_customer
+    : record.summary_internal;
+}
+
+function label(type: ChangeType): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+/** Non-empty groups, in order. */
+function sectionsOf(
+  records: ChangelogEntry[]
+): [ChangeType, ChangelogEntry[]][] {
+  const groups = groupRecords(published(records));
+  return CHANGELOG_TYPE_ORDER.flatMap((t): [ChangeType, ChangelogEntry[]][] => {
+    const list = groups.get(t) ?? [];
+    return list.length > 0 ? [[t, list]] : [];
+  });
+}
+
 export function renderMarkdown(
-  records: RecordWithPR[],
+  records: ChangelogEntry[],
   options: ChangelogOptions
 ): string {
-  const filtered = records.filter((r) => r.record.audience !== "internal");
-  const groups = groupRecords(filtered);
-  const lines: string[] = [];
-  const range = `## [${options.from}..${options.to}]`;
-  lines.push(range);
-  lines.push("");
-  for (const t of TYPE_ORDER) {
-    const list = groups.get(t);
-    if (!list || list.length === 0) {
-      continue;
-    }
-    const label = t.charAt(0).toUpperCase() + t.slice(1);
-    lines.push(`### ${label}`);
+  const lines: string[] = [`## [${options.from}..${options.to}]`, ""];
+  for (const [type, list] of sectionsOf(records)) {
+    lines.push(`### ${label(type)}`);
     for (const r of list) {
-      const summary =
-        options.audience === "customer"
-          ? r.record.summary_customer
-          : r.record.summary_internal;
       const pr = `#${r.prNumber}`;
       const link = options.repoUrl
         ? `[${pr}](${options.repoUrl}/pull/${r.prNumber})`
         : pr;
-      lines.push(`- ${summary} (${link})`);
+      lines.push(`- ${summaryOf(r.record, options.audience)} (${link})`);
     }
     lines.push("");
   }
@@ -83,25 +79,14 @@ export function renderMarkdown(
 }
 
 export function renderGitHubRelease(
-  records: RecordWithPR[],
+  records: ChangelogEntry[],
   options: ChangelogOptions
 ): string {
-  const filtered = records.filter((r) => r.record.audience !== "internal");
-  const groups = groupRecords(filtered);
   const lines: string[] = [];
-  for (const t of TYPE_ORDER) {
-    const list = groups.get(t);
-    if (!list || list.length === 0) {
-      continue;
-    }
-    const label = t.charAt(0).toUpperCase() + t.slice(1);
-    lines.push(`### ${label}`);
+  for (const [type, list] of sectionsOf(records)) {
+    lines.push(`### ${label(type)}`);
     for (const r of list) {
-      const summary =
-        options.audience === "customer"
-          ? r.record.summary_customer
-          : r.record.summary_internal;
-      lines.push(`- ${summary} (#${r.prNumber})`);
+      lines.push(`- ${summaryOf(r.record, options.audience)} (#${r.prNumber})`);
     }
   }
   return lines.join("\n").trim();
@@ -113,90 +98,55 @@ export function renderGitHubRelease(
  * everything else bumps the patch version (this project is 0.x).
  */
 export function renderChangeset(
-  records: RecordWithPR[],
+  records: ChangelogEntry[],
   options: ChangelogOptions
 ): string {
   if (!options.packageName) {
     throw new Error("The changeset format needs a package name (--package)");
   }
-  const filtered = records.filter((r) => r.record.audience !== "internal");
-  if (filtered.length === 0) {
+  const publishedRecords = published(records);
+  if (publishedRecords.length === 0) {
     return "";
   }
-  const minor = filtered.some(
+  const minor = publishedRecords.some(
     (r) =>
       r.record.breaking ||
       r.record.type === "breaking" ||
       r.record.type === "feature"
   );
-  const lines = [
-    "---",
-    `"${options.packageName}": ${minor ? "minor" : "patch"}`,
-    "---",
-    "",
-  ];
-  const groups = groupRecords(filtered);
-  for (const t of TYPE_ORDER) {
-    for (const r of groups.get(t) ?? []) {
-      const summary =
-        options.audience === "customer"
-          ? r.record.summary_customer
-          : r.record.summary_internal;
-      lines.push(`- ${summary} (#${r.prNumber})`);
+  const bump = minor
+    ? DEFAULT_CHANGESET_BUMP_MINOR
+    : DEFAULT_CHANGESET_BUMP_PATCH;
+  const lines = ["---", `"${options.packageName}": ${bump}`, "---", ""];
+  for (const [, list] of sectionsOf(records)) {
+    for (const r of list) {
+      lines.push(`- ${summaryOf(r.record, options.audience)} (#${r.prNumber})`);
     }
   }
   return lines.join("\n").trim();
 }
 
 export function renderSlackPayload(
-  records: RecordWithPR[],
+  records: ChangelogEntry[],
   options: ChangelogOptions
 ): string {
-  const filtered = records.filter((r) => r.record.audience !== "internal");
-  const groups = groupRecords(filtered);
-  const prelude = `🔍 Changelog ${options.from} → ${options.to}`;
-  const sections: string[] = [];
-  for (const t of TYPE_ORDER) {
-    const list = groups.get(t);
-    if (!list || list.length === 0) {
-      continue;
-    }
-    const label = t.charAt(0).toUpperCase() + t.slice(1);
+  const sections = sectionsOf(records).map(([type, list]) => {
     const body = list
-      .map((r) => {
-        const summary =
-          options.audience === "customer"
-            ? r.record.summary_customer
-            : r.record.summary_internal;
-        return `• ${summary} (#${r.prNumber})`;
-      })
+      .map((r) => `• ${summaryOf(r.record, options.audience)} (#${r.prNumber})`)
       .join("\n");
-    sections.push(`*${label}*\n${body}`);
-  }
-  const payload = {
-    prelude,
-    sections,
-  };
-  return JSON.stringify(payload, null, 2);
+    return `*${label(type)}*\n${body}`;
+  });
+  return JSON.stringify(
+    { prelude: `🔍 Changelog ${options.from} → ${options.to}`, sections },
+    null,
+    2
+  );
 }
-
-export type ChangelogFormat =
-  | "markdown"
-  | "github-release"
-  | "changeset"
-  | "slack";
-
-export const CHANGELOG_FORMATS: readonly ChangelogFormat[] = [
-  "markdown",
-  "github-release",
-  "changeset",
-  "slack",
-];
 
 /** Render records in the requested format. Each format has its own renderer. */
 export function renderChangelog(
   format: ChangelogFormat,
-  records: RecordWithPR[],
+  records: ChangelogEntry[],
   options: ChangelogOptions
 ): string {
   switch (format) {

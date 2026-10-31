@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
+import {
+  END_MARKER,
+  MARKER_HASH_PATTERN,
+  MARKER_HEADER_PATTERN,
+  MARKER_JSON_BLOCK,
+  MARKER_JSON_PATTERN,
+  REGENERATE_CHECKBOX,
+  REGENERATE_CHECKED,
+  REGENERATE_UNCHECKED,
+  START_MARKER,
+} from "./constants";
+import type { MarkerBlock } from "./types";
 
-export const START_MARKER = "<!-- describe:start";
-export const END_MARKER = "<!-- describe:end -->";
-
-export interface MarkerBlock {
-  description: string;
-  hash: string;
-  raw: string;
-  recordJson: string;
-}
-
+/** Find the block the tool wrote into a PR body, or null when there is none. */
 export function extractMarkerBlock(body: string): MarkerBlock | null {
   const startIdx = body.indexOf(START_MARKER);
   if (startIdx === -1) {
@@ -23,16 +26,13 @@ export function extractMarkerBlock(body: string): MarkerBlock | null {
   const raw = body.slice(startIdx, endIdx + END_MARKER.length);
   const inner = body.slice(startIdx + START_MARKER.length, endIdx).trim();
 
-  const hashMatch = /hash=([a-f0-9]{64})/i.exec(inner);
-  const hash = hashMatch ? hashMatch[1] : "";
-
-  const jsonMatch = /```json\n([\s\S]*?)```/.exec(inner);
-  const recordJson = jsonMatch ? jsonMatch[1].trim() : "";
+  const hash = MARKER_HASH_PATTERN.exec(inner)?.[1] ?? "";
+  const recordJson = MARKER_JSON_PATTERN.exec(inner)?.[1].trim() ?? "";
 
   // Drop the start marker's "hash=… -->" tail and the JSON record block.
   const description = inner
-    .replace(/^\s*hash=[a-f0-9]{64}\s*-->/i, "")
-    .replace(/```json[\s\S]*?```/g, "")
+    .replace(MARKER_HEADER_PATTERN, "")
+    .replace(MARKER_JSON_BLOCK, "")
     .trim();
 
   return { description, hash, raw, recordJson };
@@ -42,25 +42,24 @@ export function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
+/**
+ * True when the block's description no longer matches the hash stored with it.
+ * `storedHash` is the hash the block was written with.
+ */
 export function isEdited(body: string, storedHash: string): boolean {
   const block = extractMarkerBlock(body);
-  if (!block) {
+  if (!(block && storedHash)) {
     return false;
   }
-  if (!storedHash) {
-    return false;
-  }
-  // Re-hash the current description. The block's own hash is what the
-  // content was when it was written; a human edit changes the content only.
   return hashContent(block.description) !== storedHash;
 }
 
 export function hasRegenerateCheckbox(body: string): boolean {
-  return /\[ \]\s*Regenerate description/i.test(body);
+  return REGENERATE_UNCHECKED.test(body);
 }
 
 export function isTickmarked(body: string): boolean {
-  return /\[x\]\s*Regenerate description/i.test(body);
+  return REGENERATE_CHECKED.test(body);
 }
 
 export function renderMarkerBlock(
@@ -73,6 +72,7 @@ export function renderMarkerBlock(
   return `${START_MARKER} hash=${hash} -->${jsonBlock}${inner ? `\n\n${inner}` : ""}\n${END_MARKER}`;
 }
 
+/** Replace the existing block, or add the new one at the end of the body. */
 export function replaceOrInsertMarkerBlock(
   body: string,
   newBlock: string
@@ -88,18 +88,15 @@ export function replaceOrInsertMarkerBlock(
   return `${body.slice(0, startIdx)}${newBlock}${body.slice(endIdx + END_MARKER.length)}`;
 }
 
+/** Add the regenerate checkbox inside the block, once. */
 export function appendRegenerateCheckbox(body: string): string {
-  const checkbox = "- [ ] Regenerate description";
   if (hasRegenerateCheckbox(body)) {
     return body;
   }
   const startIdx = body.indexOf(START_MARKER);
-  if (startIdx === -1) {
-    return `${body.trim()}\n\n${checkbox}`;
-  }
-  const endIdx = body.indexOf(END_MARKER, startIdx);
+  const endIdx = startIdx === -1 ? -1 : body.indexOf(END_MARKER, startIdx);
   if (endIdx === -1) {
-    return `${body.trim()}\n\n${checkbox}`;
+    return `${body.trim()}\n\n${REGENERATE_CHECKBOX}`;
   }
-  return `${body.slice(0, endIdx)}\n\n${checkbox}\n${body.slice(endIdx)}`;
+  return `${body.slice(0, endIdx)}\n\n${REGENERATE_CHECKBOX}\n${body.slice(endIdx)}`;
 }

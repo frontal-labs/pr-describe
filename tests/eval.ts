@@ -7,23 +7,22 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseFileDiffs } from "../src/collect";
-import { DEFAULT_CONFIG, type ResolvedConfig } from "../src/config";
 import { generateDescription } from "../src/generate";
 import { claimTokens, isGrounded } from "../src/grounding";
+import { DEFAULT_CONFIG } from "../src/loader";
 import { getProvider } from "../src/providers";
-
-interface Expected {
-  breaking: boolean;
-  scope: string;
-  title?: string;
-  type: string;
-}
+import {
+  type FixtureExpectation,
+  FixtureExpectationSchema,
+  type ResolvedConfig,
+} from "../src/types";
+import { messageOf, parseOrThrow } from "../src/validate";
 
 interface Row {
   actual: { breaking: boolean; scope: string; type: string } | null;
   droppedSentences: number;
   error?: string;
-  expected: Expected;
+  expected: FixtureExpectation;
   ms: number;
   name: string;
   review: string[];
@@ -36,10 +35,14 @@ const names = readdirSync(dir)
   .map((f) => f.slice(0, -".diff".length))
   .sort();
 
-const expectations = new Map<string, Expected>(
+const expectations = new Map<string, FixtureExpectation>(
   names.map((name) => [
     name,
-    JSON.parse(readFileSync(join(dir, `${name}.json`), "utf-8")) as Expected,
+    parseOrThrow(
+      FixtureExpectationSchema,
+      JSON.parse(readFileSync(join(dir, `${name}.json`), "utf-8")),
+      `${name}.json`
+    ),
   ])
 );
 
@@ -67,7 +70,10 @@ try {
   for (const name of names) {
     const started = Date.now();
     const diff = readFileSync(join(dir, `${name}.diff`), "utf-8");
-    const expected = expectations.get(name) as Expected;
+    const expected = expectations.get(name);
+    if (!expected) {
+      throw new Error(`No expectation for fixture ${name}`);
+    }
     const title = expected.title ?? `Fixture ${name}`;
     const files = parseFileDiffs(diff);
     const source = [
@@ -103,7 +109,7 @@ try {
       rows.push({
         actual: null,
         droppedSentences: 0,
-        error: (err as Error).message,
+        error: messageOf(err),
         expected,
         ms: Date.now() - started,
         name,
@@ -111,7 +117,10 @@ try {
         ungrounded: [],
       });
     }
-    const last = rows.at(-1) as Row;
+    const last = rows.at(-1);
+    if (!last) {
+      throw new Error("no result recorded");
+    }
     const detail = last.error
       ? `ERROR ${last.error}`
       : `${JSON.stringify(last.actual)} review=${last.review.join("+") || "-"} dropped=${last.droppedSentences} ungrounded=${last.ungrounded.length}`;

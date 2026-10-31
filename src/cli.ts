@@ -1,23 +1,44 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Cli, on, parseArgs, UsageError, value } from "./args";
-import { CHANGELOG_FORMATS, renderChangelog } from "./changelog";
+import { commandOf, on, parseArgs, parseUsage, value } from "./args";
+import { renderChangelog } from "./changelog";
 import {
   collectFromPR,
   listChangelogEntries,
   resolveRepo,
   updatePullRequestBody,
 } from "./collect";
-import { type DescribeOutcome, runDescribe } from "./describe";
+import {
+  CHANGES_DIR,
+  CONFIG_FILE,
+  DEFAULT_CHANGELOG_FORMAT,
+  DEFAULT_MODEL,
+  DEFAULT_PACKAGE_JSON,
+  DEFAULT_PROVIDER,
+  DEFAULT_SECTIONS,
+  GITHUB_WEB_URL,
+} from "./constants";
+import { runDescribe } from "./describe";
 import { env, isMockData } from "./env";
-import { CONFIG_FILE, loadConfig } from "./loader";
-import { getProvider, type Provider } from "./providers";
-import { type Audience, VALID_AUDIENCES } from "./record";
+import { loadConfig } from "./loader";
+import { getProvider } from "./providers";
+import {
+  ChangelogArgsSchema,
+  type Cli,
+  ConfigSchema,
+  DescribeArgsSchema,
+  type DescribeOutcome,
+  InitArgsSchema,
+  PackageJsonSchema,
+  type Provider,
+  type ResolvedConfig,
+} from "./types";
+import { UsageError } from "./validate";
 
 async function main(argv: string[]): Promise<number> {
   const cli = parseArgs(argv);
   try {
-    switch (cli.command) {
+    switch (commandOf(cli)) {
       case "describe":
         await describeCommand(cli);
         return 0;
@@ -30,30 +51,28 @@ async function main(argv: string[]): Promise<number> {
       default:
         throw new UsageError(`Unknown command: ${cli.command}`);
     }
-  } catch (err) {
-    if (err instanceof UsageError) {
-      console.error(err.message);
-      return 1;
-    }
-    console.error(err);
+  } catch (err: unknown) {
+    // Expected problems print as a message. Anything else is a bug: show the stack.
+    console.error(err instanceof UsageError ? err.message : err);
     return 1;
   }
 }
 
 async function describeCommand(cli: Cli): Promise<void> {
-  const update = on(cli, "update");
-  const dryRun = on(cli, "dry-run");
-  const prFlag = value(cli, "pr");
-  const prNumber = prFlag === undefined ? undefined : Number(prFlag);
-  if (update && prNumber === undefined) {
-    throw new UsageError("--update needs --pr <number>");
-  }
-  if (prNumber !== undefined && !Number.isInteger(prNumber)) {
-    throw new UsageError(`--pr must be a number, got "${prFlag}"`);
-  }
+  const args = parseUsage(DescribeArgsSchema, {
+    base: value(cli, "base"),
+    dryRun: on(cli, "dry-run"),
+    head: value(cli, "head"),
+    owner: value(cli, "owner"),
+    pr: parsePrFlag(value(cli, "pr")),
+    repo: value(cli, "repo"),
+    token: value(cli, "token"),
+    update: on(cli, "update"),
+    writeFile: on(cli, "write-file"),
+  });
 
   const config = await loadConfig();
-  const token = value(cli, "token") ?? env.GITHUB_TOKEN;
+  const token = args.token ?? env.GITHUB_TOKEN;
   const provider: Provider = getProvider(
     isMockData() ? "mock" : config.provider,
     {
@@ -66,11 +85,11 @@ async function describeCommand(cli: Cli): Promise<void> {
     outcome = await runDescribe(
       {
         collect: {
-          base: value(cli, "base"),
-          head: value(cli, "head"),
-          owner: value(cli, "owner"),
-          prNumber,
-          repo: value(cli, "repo"),
+          base: args.base,
+          head: args.head,
+          owner: args.owner,
+          prNumber: args.pr,
+          repo: args.repo,
           token,
         },
         config,
@@ -104,34 +123,39 @@ async function describeCommand(cli: Cli): Promise<void> {
         `Dropped ${outcome.droppedSentences} sentence(s) that were not grounded in the input`
       );
     }
-    if (on(cli, "write-file")) {
-      writeRecord(`${prNumber ?? "local"}.json`, outcome.recordJson);
+    if (args.writeFile) {
+      writeRecord(`${args.pr ?? "local"}.json`, outcome.recordJson);
     }
   }
 
-  if (update && dryRun) {
+  if (args.update && args.dryRun) {
     console.log("Dry run: PR not updated");
     return;
   }
-  if (update) {
+  if (args.update && args.pr !== undefined) {
     await updatePullRequestBody({
       body: outcome.body,
       owner: outcome.target.owner,
-      prNumber: outcome.target.prNumber as number,
+      prNumber: args.pr,
       repo: outcome.target.repo,
       token,
     });
-    console.log(`Updated PR #${outcome.target.prNumber}`);
+    console.log(`Updated PR #${args.pr}`);
     return;
   }
-  if (!dryRun) {
+  if (!args.dryRun) {
     console.log("\n--- New PR body (with markers) ---");
     console.log(outcome.body);
   }
 }
 
+/** `--pr` as a number. Anything that is not a number stays NaN so the schema reports it. */
+function parsePrFlag(raw: string | undefined): number | undefined {
+  return raw === undefined ? undefined : Number(raw);
+}
+
 function writeRecord(fileName: string, json: string): void {
-  const dir = join(process.cwd(), ".changes");
+  const dir = join(process.cwd(), CHANGES_DIR);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
@@ -139,38 +163,33 @@ function writeRecord(fileName: string, json: string): void {
 }
 
 async function changelogCommand(cli: Cli): Promise<void> {
-  const from = value(cli, "from");
-  const to = value(cli, "to");
-  if (!(from && to)) {
-    throw new UsageError("changelog needs --from <tag> and --to <tag>");
-  }
-  const requested = value(cli, "format") ?? "markdown";
-  const format = CHANGELOG_FORMATS.find((f) => f === requested);
-  if (!format) {
-    throw new UsageError(
-      `Unknown format: ${requested}. Use one of: ${CHANGELOG_FORMATS.join(", ")}`
-    );
-  }
-  const { owner, repo } = resolveRepo({
+  const args = parseUsage(ChangelogArgsSchema, {
+    audience: value(cli, "audience"),
+    format: value(cli, "format") ?? DEFAULT_CHANGELOG_FORMAT,
+    from: value(cli, "from"),
     owner: value(cli, "owner"),
+    package: value(cli, "package"),
     repo: value(cli, "repo"),
+    to: value(cli, "to"),
+    token: value(cli, "token"),
   });
+  const { owner, repo } = resolveRepo({ owner: args.owner, repo: args.repo });
   const { entries, missing } = await listChangelogEntries({
-    from,
+    from: args.from,
     owner,
     repo,
-    to,
-    token: value(cli, "token") ?? env.GITHUB_TOKEN,
+    to: args.to,
+    token: args.token ?? env.GITHUB_TOKEN,
   });
 
   console.log(
-    renderChangelog(format, entries, {
-      audience: audienceFlag(cli),
-      format,
-      from,
-      packageName: value(cli, "package") ?? readPackageName(),
-      repoUrl: `https://github.com/${owner}/${repo}`,
-      to,
+    renderChangelog(args.format, entries, {
+      audience: args.audience,
+      format: args.format,
+      from: args.from,
+      packageName: args.package ?? readPackageName(),
+      repoUrl: `${GITHUB_WEB_URL}/${owner}/${repo}`,
+      to: args.to,
     })
   );
   if (missing.length > 0) {
@@ -180,50 +199,39 @@ async function changelogCommand(cli: Cli): Promise<void> {
   }
 }
 
-function audienceFlag(cli: Cli): Audience | undefined {
-  const requested = value(cli, "audience");
-  if (requested === undefined) {
-    return undefined;
-  }
-  const audience = VALID_AUDIENCES.find((a) => a === requested);
-  if (!audience) {
-    throw new UsageError(
-      `Unknown audience: ${requested}. Use one of: ${VALID_AUDIENCES.join(", ")}`
-    );
-  }
-  return audience;
-}
-
 function readPackageName(): string | undefined {
-  const path = join(process.cwd(), "package.json");
+  const path = join(process.cwd(), DEFAULT_PACKAGE_JSON);
   if (!existsSync(path)) {
     return undefined;
   }
+  let raw: unknown;
   try {
-    return (JSON.parse(readFileSync(path, "utf-8")) as { name?: string }).name;
+    raw = JSON.parse(readFileSync(path, "utf-8"));
   } catch {
     return undefined;
   }
+  const parsed = PackageJsonSchema.safeParse(raw);
+  return parsed.success ? parsed.data.name : undefined;
 }
 
 function initCommand(cli: Cli): void {
+  const args = parseUsage(InitArgsSchema, { force: on(cli, "force") });
   const path = join(process.cwd(), CONFIG_FILE);
-  if (existsSync(path) && !on(cli, "force")) {
+  if (existsSync(path) && !args.force) {
     throw new UsageError(
       `${CONFIG_FILE} already exists. Pass --force to overwrite it.`
     );
   }
-  const template = {
-    ignore: ["**/*.snap", "dist/**"],
-    model: "qwen2.5-1.5b",
-    provider: "ggml-node",
+  const template: ResolvedConfig = ConfigSchema.parse({
+    model: DEFAULT_MODEL,
+    provider: DEFAULT_PROVIDER,
     scopes: {
       billing: ["src/billing/**"],
       ui: ["src/components/**"],
     },
-    sections: ["summary", "changes", "testing", "risks"],
+    sections: [...DEFAULT_SECTIONS],
     skip_labels: ["dependencies", "skip-describe"],
-  };
+  });
   writeFileSync(path, `${JSON.stringify(template, null, 2)}\n`);
   console.log(`Wrote ${CONFIG_FILE}`);
 }

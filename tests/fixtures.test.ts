@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { coerceRecord, validateRecord } from "../src/record";
+import {
+  ChangeRecordFieldsSchema,
+  FixtureExpectationSchema,
+} from "../src/types";
 
 interface Fixture {
   expected: {
@@ -22,7 +25,9 @@ function loadFixtures(): Fixture[] {
     const base = f.slice(0, -DIFF_SUFFIX.length);
     const metaPath = join(dir, `${base}${JSON_SUFFIX}`);
     const expected = existsSync(metaPath)
-      ? JSON.parse(readFileSync(metaPath, "utf-8"))
+      ? FixtureExpectationSchema.parse(
+          JSON.parse(readFileSync(metaPath, "utf-8"))
+        )
       : { breaking: false, scope: "core", type: "internal" };
     return { expected, name: f };
   });
@@ -36,12 +41,11 @@ describe("fixtures", () => {
   });
 
   it.each(fixtures)("$name has valid expected values", (f) => {
-    const record = coerceRecord({
+    const result = ChangeRecordFieldsSchema.safeParse({
       breaking: f.expected.breaking,
       scope: f.expected.scope,
       type: f.expected.type,
     });
-    const errors = validateRecord(record);
-    expect(errors).toEqual([]);
+    expect(result.success).toBe(true);
   });
 });

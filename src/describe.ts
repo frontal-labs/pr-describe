@@ -1,12 +1,12 @@
 import { chunkDiff } from "./chunk";
+import { parseFileDiffs } from "./collect";
 import {
-  type CollectedData,
-  type CollectOptions,
-  parseFileDiffs,
-} from "./collect";
-import type { ResolvedConfig } from "./config";
+  PROMPT_BUDGET_TOKENS,
+  SHORT_DESCRIPTION_WORDS,
+  WHITESPACE,
+} from "./constants";
 import { filterPaths, hasSkipLabel } from "./filter";
-import { type GenerateResult, generateDescription } from "./generate";
+import { generateDescription } from "./generate";
 import {
   appendRegenerateCheckbox,
   extractMarkerBlock,
@@ -14,38 +14,13 @@ import {
   renderMarkerBlock,
   replaceOrInsertMarkerBlock,
 } from "./markers";
-import type { Provider } from "./providers";
 import { recordToJson } from "./record";
-
-/** Token budget for one prompt's diff. */
-export const PROMPT_BUDGET_TOKENS = 4000;
-/** Descriptions of small diffs are cut to this many words. */
-export const SHORT_DESCRIPTION_WORDS = 250;
-
-export interface DescribeDeps {
-  collect: (options: CollectOptions) => Promise<CollectedData>;
-  provider: Provider;
-}
-
-export interface DescribeTarget {
-  owner: string;
-  prNumber?: number;
-  repo: string;
-}
-
-export type DescribeOutcome =
-  | { status: "skipped"; reason: string; target: DescribeTarget }
-  | { status: "edited"; body: string; target: DescribeTarget }
-  | {
-      status: "generated";
-      body: string;
-      description: string;
-      droppedSentences: number;
-      record: GenerateResult["record"];
-      recordJson: string;
-      review: string[];
-      target: DescribeTarget;
-    };
+import type {
+  CollectOptions,
+  DescribeDeps,
+  DescribeOutcome,
+  ResolvedConfig,
+} from "./types";
 
 /**
  * Run the describe pipeline. Pure orchestration: the GitHub client and the
@@ -57,14 +32,14 @@ export async function runDescribe(
   deps: DescribeDeps
 ): Promise<DescribeOutcome> {
   const collected = await deps.collect(input.collect);
-  const target: DescribeTarget = {
+  const target = {
     owner: collected.owner,
     prNumber: collected.prNumber,
     repo: collected.repo,
   };
 
-  // Fork PRs are skipped by default: the Action would need pull_request_target
-  // to read the base repo's secrets, which is a security tradeoff.
+  // Fork PRs are skipped: reading the base repository's secrets from a fork
+  // would need pull_request_target, which this tool does not use.
   if (collected.fork) {
     return {
       reason: `fork from ${collected.headOwner}/${collected.repo}; fork PRs are not supported yet`,
@@ -138,7 +113,7 @@ export async function runDescribe(
 }
 
 export function truncateWords(text: string, maxWords: number): string {
-  const words = text.trim().split(/\s+/);
+  const words = text.trim().split(WHITESPACE);
   if (words.length <= maxWords) {
     return text.trim();
   }
