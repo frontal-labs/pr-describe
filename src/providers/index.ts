@@ -1,9 +1,9 @@
 import { env } from "../env";
 
 export interface GenerateInput {
-  system: string;
   prompt: string;
   schema?: string;
+  system: string;
 }
 
 export interface GenerateOutput {
@@ -11,8 +11,8 @@ export interface GenerateOutput {
 }
 
 export interface Provider {
-  name: string;
   generate(input: GenerateInput): Promise<GenerateOutput>;
+  name: string;
 }
 
 export interface ProviderOptions {
@@ -40,17 +40,20 @@ export function getProvider(
 export class MockProvider implements Provider {
   name = "mock";
   async generate(_input: GenerateInput): Promise<GenerateOutput> {
+    const record = {
+      audience: "internal",
+      breaking: false,
+      evidence: [],
+      links: [],
+      scope: "core",
+      summary_customer: "Mock change description.",
+      summary_internal: "Mock change description.",
+      type: "feature",
+    };
+    const description =
+      "## Summary\n\nMock change description.\n\n## Changes\n\n- Mock change\n\n## Testing\n\n- Mock tests\n\n## Risks\n\n- None";
     return {
-      json: JSON.stringify({
-        type: "feature",
-        scope: "core",
-        audience: "internal",
-        breaking: false,
-        summary_internal: "Mock change description.",
-        summary_customer: "Mock change description.",
-        evidence: [],
-        links: [],
-      }),
+      json: `---FRONTCAL_JSON---\n${JSON.stringify(record)}\n---FRONTCAL_MD---\n${description}`,
     };
   }
 }
@@ -70,19 +73,19 @@ export class AnthropicProvider implements Provider {
       throw new Error("Anthropic API key not set");
     }
     const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
+      body: JSON.stringify({
+        max_tokens: 4096,
+        messages: [{ content: input.prompt, role: "user" }],
+        model: this.model,
+        system: input.system,
+        temperature: 0.1,
+      }),
       headers: {
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
         "x-api-key": this.apiKey,
-        "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: 4096,
-        temperature: 0.1,
-        system: input.system,
-        messages: [{ role: "user", content: input.prompt }],
-      }),
+      method: "POST",
     });
     if (!res.ok) {
       throw new Error(`Anthropic API error: ${res.status} ${await res.text()}`);
@@ -113,19 +116,19 @@ export class OpenAIProvider implements Provider {
       throw new Error("OpenAI API key not set");
     }
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
       body: JSON.stringify({
+        messages: [
+          { content: input.system, role: "system" },
+          { content: input.prompt, role: "user" },
+        ],
         model: this.model,
         temperature: 0.1,
-        messages: [
-          { role: "system", content: input.system },
-          { role: "user", content: input.prompt },
-        ],
       }),
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
     });
     if (!res.ok) {
       throw new Error(`OpenAI API error: ${res.status} ${await res.text()}`);

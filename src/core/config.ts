@@ -9,29 +9,29 @@ export type Section =
   | "links";
 
 export interface FrontalConfig {
-  provider?: ProviderName;
-  model?: string;
   api_key_env?: string;
-  sections?: Section[];
-  tone?: string;
-  scopes?: Record<string, string[]>;
   ignore?: string[];
-  skip_labels?: string[];
-  max_diff_lines?: number;
   large_change_threshold?: number;
+  max_diff_lines?: number;
+  model?: string;
+  provider?: ProviderName;
+  scopes?: Record<string, string[]>;
+  sections?: Section[];
+  skip_labels?: string[];
+  tone?: string;
 }
 
 export const DEFAULT_CONFIG: Required<FrontalConfig> = {
-  provider: "anthropic",
-  model: "claude-sonnet-5-5",
   api_key_env: "PR_DESCRIBE_API_KEY",
-  sections: ["summary", "changes", "testing", "risks"],
-  tone: "concise",
-  scopes: {},
   ignore: [],
-  skip_labels: [],
-  max_diff_lines: 4000,
   large_change_threshold: 500,
+  max_diff_lines: 4000,
+  model: "claude-sonnet-5-5",
+  provider: "anthropic",
+  scopes: {},
+  sections: ["summary", "changes", "testing", "risks"],
+  skip_labels: [],
+  tone: "concise",
 };
 
 export function mergeConfig(

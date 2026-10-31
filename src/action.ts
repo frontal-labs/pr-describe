@@ -27,7 +27,7 @@ async function main() {
     process.exit(1);
   }
 
-  const collected = await collectFromPR({ owner, repo, prNumber, token });
+  const collected = await collectFromPR({ owner, prNumber, repo, token });
   const fileDiffs = filterPaths(parseFileDiffs(collected.diff), { config });
   const chunks = chunkDiff(fileDiffs, 4000, config.large_change_threshold);
   const providerName = isMockData() ? "mock" : config.provider;
@@ -37,13 +37,13 @@ async function main() {
   });
 
   const result = await generateDescription(provider, {
-    title: collected.title,
     body: collected.body,
     commits: collected.commits,
-    issueNumbers: collected.issueNumbers,
-    diff: chunks[0].diff,
-    prTemplate: collected.prTemplate,
     config,
+    diff: chunks[0].diff,
+    issueNumbers: collected.issueNumbers,
+    prTemplate: collected.prTemplate,
+    title: collected.title,
   });
 
   const recordYaml = Object.entries(result.record)

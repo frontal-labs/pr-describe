@@ -3,8 +3,8 @@ import type { FrontalConfig } from "./config";
 import { type ChangeRecord, coerceRecord, validateRecord } from "./record";
 
 export interface GenerateResult {
-  record: ChangeRecord;
   description: string;
+  record: ChangeRecord;
 }
 
 const SYSTEM_PROMPT = `You are a precise technical writer for a PR description system.
@@ -38,7 +38,7 @@ export async function generateDescription(
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const out = await provider.generate({ system: SYSTEM_PROMPT, prompt });
+      const out = await provider.generate({ prompt, system: SYSTEM_PROMPT });
       return parseOutput(out.json, data.config);
     } catch (err) {
       lastError = err as Error;
@@ -61,7 +61,7 @@ function buildPrompt(
   },
   sections: string
 ): string {
-  const diff = data.diff.slice(0, 20000);
+  const diff = data.diff.slice(0, 20_000);
   return [
     `PR title: ${data.title}`,
     `PR body: ${data.body || "(none)"}`,
@@ -92,7 +92,7 @@ function parseOutput(
       throw new Error(`Validation errors: ${JSON.stringify(errors)}`);
     }
     const description = raw.replace(/```json[\s\S]*?```/, "").trim();
-    return { record, description };
+    return { description, record };
   }
 
   const record = coerceRecord(JSON.parse(jsonMatch[1]));
@@ -101,7 +101,7 @@ function parseOutput(
     throw new Error(`Validation errors: ${JSON.stringify(errors)}`);
   }
   const description = raw.slice(jsonMatch.index + jsonMatch[0].length).trim();
-  return { record, description };
+  return { description, record };
 }
 
 export function filterClaimsByEvidence(
@@ -116,5 +116,5 @@ export function filterClaimsByEvidence(
     }
     return true;
   });
-  return { record, description: filtered.join("\n") };
+  return { description: filtered.join("\n"), record };
 }

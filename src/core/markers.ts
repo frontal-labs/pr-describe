@@ -4,10 +4,10 @@ export const START_MARKER = "<!-- frontal:start";
 export const END_MARKER = "<!-- frontal:end -->";
 
 export interface MarkerBlock {
-  hash: string;
-  recordYaml: string;
   description: string;
+  hash: string;
   raw: string;
+  recordYaml: string;
 }
 
 export function extractMarkerBlock(body: string): MarkerBlock | null {
@@ -34,7 +34,7 @@ export function extractMarkerBlock(body: string): MarkerBlock | null {
     .replace(/```yaml[\s\S]*?```/g, "")
     .trim();
 
-  return { hash, recordYaml, description, raw };
+  return { description, hash, raw, recordYaml };
 }
 
 export function hashContent(content: string): string {

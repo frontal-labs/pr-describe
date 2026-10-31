@@ -1,12 +1,12 @@
 export interface Chunk {
-  files: string[];
   diff: string;
+  files: string[];
   tokenEstimate: number;
 }
 
 export interface FileDiff {
-  path: string;
   diff: string;
+  path: string;
 }
 
 export function estimateTokens(text: string): number {
@@ -51,8 +51,8 @@ function summarizeChunk(
   tokenBudget: number
 ): Chunk[] {
   const summaries = chunks.map((c) => ({
-    path: c.files.join(", "),
     diff: c.diff,
+    path: c.files.join(", "),
   }));
   const combined = summaries
     .map((s) => `### ${s.path}\n${s.diff}`)
@@ -61,8 +61,8 @@ function summarizeChunk(
   if (estimate <= tokenBudget) {
     return [
       {
-        files: fileDiffs.map((f) => f.path),
         diff: combined,
+        files: fileDiffs.map((f) => f.path),
         tokenEstimate: estimate,
       },
     ];
@@ -73,8 +73,8 @@ function summarizeChunk(
 function buildChunk(fileDiffs: FileDiff[]): Chunk {
   const diff = fileDiffs.map((f) => f.diff).join("\n");
   return {
-    files: fileDiffs.map((f) => f.path),
     diff,
+    files: fileDiffs.map((f) => f.path),
     tokenEstimate: estimateTokens(diff),
   };
 }

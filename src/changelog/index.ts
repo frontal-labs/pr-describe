@@ -1,11 +1,11 @@
 import type { Audience, ChangeRecord, ChangeType } from "../core/record";
 
 export interface ChangelogOptions {
-  from: string;
-  to: string;
   audience?: Audience;
   format?: "markdown" | "github-release" | "changeset";
+  from: string;
   polish?: boolean;
+  to: string;
 }
 
 export interface RecordWithPR {

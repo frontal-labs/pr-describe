@@ -17,19 +17,19 @@ import { getProvider } from "./providers";
 
 interface CliArgs {
   _: string[];
-  pr?: string;
+  audience?: string;
   base?: string;
+  dryRun?: boolean;
+  format?: string;
+  from?: string;
   head?: string;
   owner?: string;
-  repo?: string;
-  token?: string;
-  dryRun?: boolean;
-  writeFile?: boolean;
-  from?: string;
-  to?: string;
-  audience?: string;
-  format?: string;
   polish?: boolean;
+  pr?: string;
+  repo?: string;
+  to?: string;
+  token?: string;
+  writeFile?: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -73,11 +73,11 @@ async function describeCommand(args: CliArgs) {
   const token = args.token ?? env.GITHUB_TOKEN;
 
   const collected = await collectFromPR({
-    owner: args.owner,
-    repo: args.repo,
-    prNumber: args.pr ? Number(args.pr) : undefined,
     base: args.base,
     head: args.head,
+    owner: args.owner,
+    prNumber: args.pr ? Number(args.pr) : undefined,
+    repo: args.repo,
     token,
   });
 
@@ -100,13 +100,13 @@ async function describeCommand(args: CliArgs) {
   });
 
   const result = await generateDescription(provider, {
-    title: collected.title,
     body: collected.body,
     commits: collected.commits,
-    issueNumbers: collected.issueNumbers,
-    diff: chunks[0].diff,
-    prTemplate: collected.prTemplate,
     config,
+    diff: chunks[0].diff,
+    issueNumbers: collected.issueNumbers,
+    prTemplate: collected.prTemplate,
+    title: collected.title,
   });
 
   const recordYaml = Object.entries(result.record)

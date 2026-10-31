@@ -1,3 +1,3 @@
 export default {
-  "*": "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true",
+	"*": "bunx ultracite fix --no-errors-on-unmatched --files-ignore-unknown=true",
 };

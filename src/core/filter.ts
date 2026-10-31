@@ -105,7 +105,9 @@ export function filterPaths<T extends { path: string } | string>(
     ...DEFAULT_IGNORE,
     ...(options.config?.ignore ?? DEFAULT_CONFIG.ignore),
   ];
-  if (paths.length === 0) return [];
+  if (paths.length === 0) {
+    return [];
+  }
   const first = paths[0];
   if (typeof first === "string") {
     return (paths as string[]).filter((p) => !isIgnored(p, ignore)) as T[];

@@ -8,16 +8,16 @@ import { z } from "zod";
  * statically here.
  */
 export const env = createEnv({
+  runtimeEnv: process.env,
   server: {
-    GITHUB_TOKEN: z.string().optional(),
-    GITHUB_REPOSITORY: z.string().optional(),
-    PR_NUMBER: z.string().optional(),
-    MOCK_DATA: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().optional(),
+    GITHUB_REPOSITORY: z.string().optional(),
+    GITHUB_TOKEN: z.string().optional(),
+    MOCK_DATA: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_BASE_URL: z.string().optional(),
+    PR_NUMBER: z.string().optional(),
   },
-  runtimeEnv: process.env,
   skipValidation:
     typeof process !== "undefined" &&
     (process.env.NODE_ENV === "test" || process.env.BUN_TEST === "1"),

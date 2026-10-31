@@ -3,28 +3,28 @@ import { env } from "../env";
 import { readTextFileSync, runGit } from "../runtime";
 
 export interface CollectedData {
-  owner: string;
-  repo: string;
-  prNumber?: number;
-  title: string;
+  author: string;
+  base: string;
   body: string;
   branch: string;
-  base: string;
-  head: string;
-  diff: string;
   commits: string[];
+  diff: string;
+  head: string;
   issueNumbers: string[];
-  prTemplate: string | null;
   labels: string[];
-  author: string;
+  owner: string;
+  prNumber?: number;
+  prTemplate: string | null;
+  repo: string;
+  title: string;
 }
 
 export interface CollectOptions {
-  owner?: string;
-  repo?: string;
-  prNumber?: number;
   base?: string;
   head?: string;
+  owner?: string;
+  prNumber?: number;
+  repo?: string;
   token?: string;
 }
 
@@ -58,21 +58,21 @@ async function collectFromPRNumber(
 ): Promise<CollectedData> {
   const { data: pr } = await octokit.rest.pulls.get({
     owner,
-    repo,
     pull_number: prNumber,
+    repo,
   });
   const { data: diffRes } = await octokit.rest.pulls.get({
-    owner,
-    repo,
-    pull_number: prNumber,
     mediaType: { format: "diff" },
+    owner,
+    pull_number: prNumber,
+    repo,
   });
   const diff = typeof diffRes === "string" ? diffRes : "";
 
   const { data: commitsRes } = await octokit.rest.pulls.listCommits({
     owner,
-    repo,
     pull_number: prNumber,
+    repo,
   });
   const commits = commitsRes.map((c) => c.commit.message).filter(Boolean);
 
@@ -86,8 +86,8 @@ async function collectFromPRNumber(
   try {
     const { data: templateRes } = await octokit.rest.repos.getContent({
       owner,
-      repo,
       path: ".github/PULL_REQUEST_TEMPLATE.md",
+      repo,
     });
     if ("content" in templateRes && templateRes.content) {
       prTemplate = Buffer.from(templateRes.content, "base64").toString("utf-8");
@@ -97,20 +97,20 @@ async function collectFromPRNumber(
   }
 
   return {
-    owner,
-    repo,
-    prNumber,
-    title: pr.title,
+    author: pr.user?.login ?? "",
+    base: pr.base.ref,
     body: pr.body ?? "",
     branch: pr.head.ref,
-    base: pr.base.ref,
-    head: pr.head.sha,
-    diff,
     commits,
+    diff,
+    head: pr.head.sha,
     issueNumbers: Array.from(linked),
-    prTemplate,
     labels: pr.labels.map((l) => l.name),
-    author: pr.user?.login ?? "",
+    owner,
+    prNumber,
+    prTemplate,
+    repo,
+    title: pr.title,
   };
 }
 
@@ -149,19 +149,19 @@ function collectLocal(
   }
 
   return {
-    owner,
-    repo,
-    title,
+    author: "",
+    base,
     body: "",
     branch: branch.trim(),
-    base,
-    head,
-    diff,
     commits,
+    diff,
+    head,
     issueNumbers: Array.from(linked),
-    prTemplate,
     labels: [],
-    author: "",
+    owner,
+    prTemplate,
+    repo,
+    title,
   };
 }
 
@@ -176,7 +176,7 @@ export function parseFileDiffs(
       continue;
     }
     const path = match[2];
-    files.push({ path, diff: part.trim() });
+    files.push({ diff: part.trim(), path });
   }
   return files;
 }

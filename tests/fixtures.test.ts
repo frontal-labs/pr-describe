@@ -4,12 +4,12 @@ import { join } from "node:path";
 import { coerceRecord, validateRecord } from "../src/core/record";
 
 interface Fixture {
-  name: string;
   expected: {
     type: string;
     scope: string;
     breaking: boolean;
   };
+  name: string;
 }
 
 const DIFF_SUFFIX = ".diff";
@@ -23,8 +23,8 @@ function loadFixtures(): Fixture[] {
     const metaPath = join(dir, `${base}${JSON_SUFFIX}`);
     const expected = existsSync(metaPath)
       ? JSON.parse(readFileSync(metaPath, "utf-8"))
-      : { type: "internal", scope: "core", breaking: false };
-    return { name: f, expected };
+      : { breaking: false, scope: "core", type: "internal" };
+    return { expected, name: f };
   });
 }
 
@@ -37,9 +37,9 @@ describe("fixtures", () => {
 
   it.each(fixtures)("$name has valid expected values", (f) => {
     const record = coerceRecord({
-      type: f.expected.type,
-      scope: f.expected.scope,
       breaking: f.expected.breaking,
+      scope: f.expected.scope,
+      type: f.expected.type,
     });
     const errors = validateRecord(record);
     expect(errors).toEqual([]);

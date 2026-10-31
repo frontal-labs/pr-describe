@@ -48,7 +48,7 @@ describe("chunk", () => {
 
   it("single chunk when under budget", () => {
     const chunks = chunkDiff(
-      [{ path: "a.ts", diff: "x".repeat(100) }],
+      [{ diff: "x".repeat(100), path: "a.ts" }],
       4000,
       500
     );
@@ -58,8 +58,8 @@ describe("chunk", () => {
   it("splits when over budget", () => {
     const chunks = chunkDiff(
       [
-        { path: "a.ts", diff: "x".repeat(10000) },
-        { path: "b.ts", diff: "x".repeat(10000) },
+        { diff: "x".repeat(10_000), path: "a.ts" },
+        { diff: "x".repeat(10_000), path: "b.ts" },
       ],
       4000,
       500
@@ -119,30 +119,30 @@ describe("markers", () => {
 describe("record", () => {
   it("validates a good record", () => {
     const errors = validateRecord({
-      schema: 1,
-      type: "feature",
-      scope: "core",
       audience: "internal",
       breaking: false,
-      summary_internal: "x",
-      summary_customer: "x",
       evidence: ["a.ts"],
       links: ["#1"],
+      schema: 1,
+      scope: "core",
+      summary_customer: "x",
+      summary_internal: "x",
+      type: "feature",
     });
     expect(errors).toEqual([]);
   });
 
   it("rejects bad type", () => {
     const errors = validateRecord({
-      schema: 1,
-      type: "bogus",
-      scope: "core",
       audience: "internal",
       breaking: false,
-      summary_internal: "x",
-      summary_customer: "x",
       evidence: [],
       links: [],
+      schema: 1,
+      scope: "core",
+      summary_customer: "x",
+      summary_internal: "x",
+      type: "bogus",
     });
     expect(errors.length).toBeGreaterThan(0);
   });
