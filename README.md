@@ -2,7 +2,7 @@
 
 Drafts PR descriptions and change records from a diff. The model runs in-process with [ggml-node](https://www.npmjs.com/package/ggml-node): no API key, no hosted backend, no telemetry.
 
-**Status:** not published to npm yet. It prints descriptions, and with `--update` it replaces the PR body (opt-in). See [docs/index.md](docs/index.md) for details.
+**Status:** not published to npm yet. `describe` prints a description and, with `--update`, replaces the PR body (opt-in). `changelog` builds release notes from the PR records between two refs. See [docs/README.md](docs/README.md) for the full reference.
 
 ## Quickstart
 
@@ -26,16 +26,18 @@ pr-describe describe --pr 42                 # print a description and change re
 pr-describe describe --pr 42 --dry-run       # do not print the new PR body
 pr-describe describe --pr 42 --write-file    # also write .changes/42.json
 pr-describe describe --pr 42 --update        # replace the PR body with the generated block (needs GITHUB_TOKEN)
+pr-describe changelog --from v1 --to v2 --format markdown
 pr-describe init                             # write .describerc.json
 ```
 
-`changelog --from v1 --to v2 --format markdown|github-release|changeset|slack` builds release notes from the change records in the PRs merged between two refs. A PR without a record block is listed as missing, not guessed at.
-
 ## Documentation
 
-- [docs/README.md](docs/README.md): full reference. Options, configuration keys, model choices and accuracy, the GitHub Action, testing, troubleshooting, and known issues.
+- [docs/README.md](docs/README.md): landing page and map of the reference docs.
+- [docs/QUICKSTART.md](docs/QUICKSTART.md): install, configure and run.
+- [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md): every command and flag.
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md): `.describerc.json` keys.
+- [docs/GITHUB_ACTION.md](docs/GITHUB_ACTION.md): the composite action.
 - [examples/pr-describe.yml](examples/pr-describe.yml): the GitHub Actions workflow.
-- [CONTRIBUTING.md](CONTRIBUTING.md): development setup and conventions.
 
 ## License
 

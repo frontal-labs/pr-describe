@@ -4,32 +4,31 @@ Drafts PR descriptions and change records from a diff. The model runs in-process
 
 ## Status
 
-Not published to npm yet. It prints descriptions; it does not update PRs, and `changelog` is not implemented.
+Not published to npm yet. Build from source (see [QUICKSTART.md](QUICKSTART.md)).
 
-## What this does
+## What it does
 
-- `describe` — reads a PR diff (locally via `git diff`, or from GitHub via the Octokit API), generates a summary + change record with a small local LLM, and renders a new PR body wrapped in marker comments.
-- `changelog` — stub command; prints a placeholder message. Grouped rendering exists in `src/changelog/index.ts` but is not wired to a CLI path.
-- `init` — writes a `.describerc.json` config file into the repository root.
+- **`describe`** reads a PR diff (from GitHub, or locally via `git diff` with `--base`/`--head`), generates a summary and a change record with a small local model, and renders the description with a hidden marker block. It prints the result. With `--update` it also replaces the PR body on GitHub. Without `--update` nothing is written to GitHub.
+- **`changelog`** reads the change records stored in the PRs merged between two refs and renders release notes as Markdown, GitHub Release notes, a changeset, or a Slack payload.
+- **`init`** writes a starter `.describerc.json` into the repository root.
 
-## How to read these docs
+## Reading order
 
 | Doc | Purpose |
 |-----|---------|
-| [README.md](README.md) | This landing page |
 | [QUICKSTART.md](QUICKSTART.md) | Install, build, and run your first description |
-| [CONFIGURATION.md](CONFIGURATION.md) | `.describerc.json` option reference |
 | [CLI_REFERENCE.md](CLI_REFERENCE.md) | Every command and flag |
-| [GITHUB_ACTION.md](GITHUB_ACTION.md) | Using the composite GitHub Action |
-| [ENVIRONMENT_VARIABLES.md](ENVIRONMENT_VARIABLES.md) | `GITHUB_TOKEN`, `MODEL`, `MOCK_DATA`, and friends |
-| [MODELS_AND_ACCURACY.md](MODELS_AND_ACCURACY.md) | Supported model ids, defaults, and accuracy notes |
-| [OUTPUT_FORMAT.md](OUTPUT_FORMAT.md) | Change record schema and marker block format |
-| [CHANGELOG.md](CHANGELOG.md) | Changelog command and renderers |
-| [TESTING.md](TESTING.md) | Unit tests, fixtures, and eval harness |
+| [CONFIGURATION.md](CONFIGURATION.md) | `.describerc.json` option reference |
+| [GITHUB_ACTION.md](GITHUB_ACTION.md) | The composite GitHub Action and its inputs |
+| [ENVIRONMENT_VARIABLES.md](ENVIRONMENT_VARIABLES.md) | Environment variables and precedence |
+| [MODELS_AND_ACCURACY.md](MODELS_AND_ACCURACY.md) | Model ids, defaults, safeguards, measured accuracy |
+| [OUTPUT_FORMAT.md](OUTPUT_FORMAT.md) | The change record, the marker block and the description sections |
+| [CHANGELOG.md](CHANGELOG.md) | The `changelog` command and its formats |
+| [TESTING.md](TESTING.md) | Unit, end-to-end and eval tests |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common problems and fixes |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Current limitations |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup and conventions |
 
 ## License
 
-MIT. See [LICENSE.md](../../LICENSE.md).
+MIT. See [LICENSE.md](../LICENSE.md).

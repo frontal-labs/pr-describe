@@ -1,19 +1,23 @@
 # ENVIRONMENT_VARIABLES
 
-All `process.env` reads flow through `src/env.ts` (`@t3-oss/env-core` with zod). Validation is skipped in test mode (`NODE_ENV === "test"` or `BUN_TEST === "1"`).
+All reads of `process.env` in the tool go through `src/env.ts`, which validates them with `@t3-oss/env-core` and zod, once at startup. Validation is skipped when `NODE_ENV` is `test` or `BUN_TEST` is `1`.
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GITHUB_TOKEN` | no | GitHub token for Octokit requests. Optional for local diff mode. |
-| `GITHUB_REPOSITORY` | no | `owner/repo`, used to derive owner and repo. |
-| `MODEL` | no | Overrides `config.model`; selects the ggml-node model id. |
-| `MOCK_DATA` | no | `"true"` or `"1"` selects the mock provider (no model download). |
-| `PR_NUMBER` | no | Pull request number, used by the GitHub Action path (`src/action.ts`). |
-| `GGML_NODE_CACHE_DIR` | no | Cache directory for the downloaded model (set by the action workflow). |
-| `NODE_ENV` / `BUN_TEST` | no | When set to `test`/`"1"`, env validation is skipped. |
+| Variable | Read by | Description |
+|----------|---------|-------------|
+| `GITHUB_TOKEN` | `env.ts` | GitHub token for API calls. Used by PR mode, `--update` and `changelog`. |
+| `GITHUB_REPOSITORY` | `env.ts` | Must look like `owner/repo`. Needed for PR mode and `changelog` unless `--owner`/`--repo` are given. |
+| `GITHUB_API_URL` | `env.ts` | Must be a URL. Default: `https://api.github.com`. Set it for GitHub Enterprise, or to point the tool at a test server. |
+| `MODEL` | `env.ts` | Model id. A non-empty value overrides `model` in the config. Checked when the model loads: an unknown id is an error that lists the supported ones. |
+| `MOCK_DATA` | `env.ts` | `true`, `1`, `yes` or `on` forces the mock provider. Other values leave it off. |
+| `GGML_NODE_CACHE_DIR` | ggml-node | Where the downloaded model is kept. Not validated by `env.ts`. |
 
 ## Precedence
 
-- CLI flags (`--token`, `--owner`, `--repo`) win over env.
-- `MODEL` env wins over `config.model`; unset falls back to `DEFAULT_MODEL`.
-- `MOCK_DATA === "true"` forces the mock provider regardless of `config.provider`.
+- `--token` beats `GITHUB_TOKEN`.
+- `--owner` and `--repo` beat `GITHUB_REPOSITORY`.
+- A non-empty `MODEL` beats `model` in the config, which beats the default.
+- `MOCK_DATA` beats `provider` in the config.
+
+## Not used
+
+`PR_NUMBER` was read only by the removed `src/action.ts`. The action passes the PR number as the `--pr` flag.

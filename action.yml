@@ -1,5 +1,5 @@
 name: "PR Describe"
-description: "Drafts PR descriptions and change records from the diff, and prints them to the log. Does not update the PR."
+description: "Drafts PR descriptions and change records from the diff, and prints them to the log. Replaces the PR body only when update is true."
 inputs:
   pr_number:
     description: "Pull request number"

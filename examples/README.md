@@ -38,9 +38,10 @@ permissions:
 | `model` | ggml-node model id (defaults to config, then `qwen2.5-1.5b`). |
 | `write_file` | `"true"` to also write `.changes/<pr>.json`. |
 | `dry_run` | `"true"` to print without writing. |
+| `update` | `"true"` to replace the PR body with the generated block. Off by default; needs `pull-requests: write`. |
 
 ## Notes
 
-- The action prints the generated PR body to the log; it does not update the PR itself.
+- Without `update: "true"` the action prints the generated body to the log and changes nothing on GitHub.
 - Fork PRs are skipped by default.
 - Cache `.ggml-cache` so subsequent runs skip the model download.

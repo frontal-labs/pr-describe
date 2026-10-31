@@ -2,79 +2,70 @@
 
 ## Marker block
 
-Generated PR bodies are wrapped in HTML-style marker comments so re-runs can detect and preserve human edits:
+`describe` writes its output into a block bounded by two HTML comments. Everything inside is generated, except what a person edits.
 
 ```
-<!-- frontal:start hash=<sha256> -->
+<!-- describe:start hash=<sha256> -->
+```json
+{
+  "audience": "developer",
+  "breaking": false,
+  "evidence": ["src/billing/pricing.ts"],
+  "links": [],
+  "scope": "billing",
+  "summary_customer": "Fixes rounding of prices to whole cents",
+  "summary_internal": "Fixes rounding of prices to whole cents",
+  "type": "fix"
+}
+```
+
 ## Summary
 ...
 
 ## Changes
-- Updated src/api.ts
-
-```json
-{
-  "type": "fix",
-  "audience": "internal",
-  "scope": "core",
-  "breaking": false,
-  "summary_customer": "...",
-  "summary_internal": "...",
-  "evidence": ["src/api.ts"],
-  "links": [],
-  "changes": ["Updated src/api.ts"],
-  "testing": [...],
-  "risks": [...]
-}
-```
-...
-<!-- frontal:end -->
+- `src/billing/pricing.ts` (+1 −1)
+<!-- describe:end -->
 ```
 
-- `START_MARKER = "<!-- frontal:start"` — the hash (`hash=<sha256>`) is computed over the description text.
-- A JSON code block holds the full change record.
-- `END_MARKER = "<!-- frontal:end -->"`.
+- The start comment holds `hash=<sha256>`: the SHA-256 of the description text (everything after the JSON block).
+- The JSON block is the change record (see below), with no `schema` field.
+- The end comment is `<!-- describe:end -->`.
 
-On re-run:
-- If the block exists and its hash matches the new description, the previous block is kept unchanged.
-- If the block exists and the description differs (human-edited), the block is preserved and a `- [ ] Regenerate description` checkbox is appended.
-- Otherwise the block is replaced or inserted at the end of the body.
+### Re-runs
 
-## Change record schema
+On each run the tool hashes the current description and compares it with the stored hash:
 
-`ChangeRecord` (schema version 1):
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `type` | `"feature" \| "fix" \| "perf" \| "refactor" \| "docs" \| "breaking" \| "internal"` | What the change does. |
-| `audience` | `"customer" \| "developer" \| "internal"` | Who the summary is for. |
-| `scope` | `string` | Area name; resolved from `scopes` globs or defaults to `"core"`. |
-| `breaking` | `boolean` | Whether the change removes/changes behavior callers depend on. |
-| `summary` | `string` | One or two plain sentences. |
-| `summary_customer` | `string` | Customer-facing summary. |
-| `summary_internal` | `string` | Internal-facing summary. |
-| `changes` | `string[]` | Short sentences naming changed files/symbols. |
-| `testing` | `string[]` | Testing notes. |
-| `risks` | `string[]` | Risk notes. |
-| `evidence` | `string[]` | Exact file paths and symbols copied from the diff. |
-| `links` | `string[]` | Links that appear in the prompt (issue/PR references). |
-| `schema` | `1` | Internal; stripped from `recordToJson()` output. |
-
-`recordToJson()` pretty-prints the record without the `schema` field and is written to `.changes/<pr>.json` when `--write-file` is set.
+- **Same hash, or no block yet:** the block is replaced (or added at the end of the body).
+- **Different hash (a person edited it):** the block is kept exactly as it is. A `- [ ] Regenerate description` checkbox is added inside the block. The model does not run, and nothing is overwritten. Tick the box in a future version to request regeneration (not implemented yet; delete the block to regenerate).
 
 ## Description sections
 
-Rendered in the order given by `config.sections`, using fixed headings:
+Sections render in the order given by `sections`, under fixed headings:
 
-| Section | Heading | Source |
-|---------|---------|--------|
-| `summary` | `## Summary` | Model summary text |
-| `changes` | `## Changes` | Bulleted `changes` items, or `- None` |
-| `testing` | `## Testing` | Bulleted `testing` items, or `- None` |
-| `risks` | `## Risks` | Bulleted `risks` items, or `- None` |
+| Section | Heading | Content |
+|---------|---------|---------|
+| `summary` | `## Summary` | Model sentences whose names, paths and numbers all appear in the input. If none survive, `Updates N file(s).` |
+| `changes` | `## Changes` | Written by code: one bullet per changed file with its added and removed line counts. Never from the model. |
+| `testing` | `## Testing` | Only when a test file changed or the PR text mentions tests. The model's grounded items come first. If it names none, each changed test file is listed as `Test file changed: \`path\``. Otherwise `- Not stated`. |
+| `risks` | `## Risks` | Only for a breaking marker, a migration, schema or config file. Otherwise `- Not stated`. |
 
-Sections `breaking` and `links` have no model field and are skipped by `renderDescription()`.
+When the model's second check disagreed about `type` or `scope`, the description starts with `> **Needs review:** ...`.
 
-## Large changes
+`breaking` and `links` are not rendered as sections.
 
-When total diff lines exceed `large_change_threshold` (default 500), the description is **not** truncated to 250 words and chunk reduction is enabled. Otherwise the description is truncated to 250 words.
+## Change record
+
+The record is the JSON shown above. It is also the content of `.changes/<pr>.json` with `--write-file`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `type` | `feature` \| `fix` \| `perf` \| `refactor` \| `docs` \| `breaking` \| `internal` | Code decides `docs` (only documentation changed), and `internal` (only CI, lockfiles, build config or tests changed). Otherwise the model decides. |
+| `audience` | `customer` \| `developer` \| `internal` | Who the summary is for. Missing values become `internal`. |
+| `scope` | string | Resolved from `scopes` globs, see [CONFIGURATION.md](CONFIGURATION.md). |
+| `breaking` | boolean | True only when the model says so and the PR text contains the word "breaking". |
+| `summary_customer` | string | Grounded summary for customers. Falls back to the grounded summary. |
+| `summary_internal` | string | Grounded summary for developers. Falls back to the grounded summary. |
+| `evidence` | string[] | Changed paths, or text found in the input. The `a/` and `b/` diff prefixes are removed. Duplicates are removed. |
+| `links` | string[] | Only links found in the input (PR text, commits, issue numbers). |
+
+Internally the record also carries `schema: 1`. It is not written to the JSON output.

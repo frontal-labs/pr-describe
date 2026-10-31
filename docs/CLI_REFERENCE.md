@@ -1,53 +1,59 @@
 # CLI_REFERENCE
 
-Entry point: `dist/cli.js` (or `bun run` / `node dist/cli.js`).
-
-Commands: `describe`, `changelog`, `init`.
+Entry point: `dist/cli.js`, run with `node dist/cli.js <command> [flags]`. Commands: `describe`, `changelog`, `init`. Flags take a value (`--pr 42`) or stand alone (`--dry-run`).
 
 ## describe
 
-Draft a PR description and change record from a diff.
+Draft a PR description and change record.
 
 ```
-node dist/cli.js describe --pr 42 [--dry-run] [--write-file] [--owner OWNER] [--repo REPO] [--token TOKEN] [--base BASE] [--head HEAD]
+node dist/cli.js describe --pr 42 [--dry-run] [--write-file] [--update] [--owner OWNER] [--repo REPO] [--token TOKEN]
+node dist/cli.js describe --base main --head HEAD [--dry-run] [--write-file]
 ```
 
-| Flag | Type | Description |
-|------|------|-------------|
-| `--pr` | number | Pull request number. Required for the GitHub path. |
-| `--dry-run` | boolean | Print output without writing a new PR body or `.changes/` file. |
-| `--write-file` | boolean | Also write `.changes/<pr>.json` containing the change record JSON. |
-| `--owner` | string | GitHub owner. Defaults to `GITHUB_REPOSITORY`. |
-| `--repo` | string | GitHub repo name. Defaults to `GITHUB_REPOSITORY`. |
+| Flag | Value | Description |
+|------|-------|-------------|
+| `--pr` | number | Pull request number. Selects PR mode. Needs `GITHUB_TOKEN` and `GITHUB_REPOSITORY` (or `--owner` and `--repo`). |
+| `--base` | ref | Local mode: base ref. Default `main`. Used only when `--pr` is absent. |
+| `--head` | ref | Local mode: head ref. Default `HEAD`. |
+| `--owner`, `--repo` | string | Override the repository. Defaults to `GITHUB_REPOSITORY`. |
 | `--token` | string | GitHub token. Defaults to `GITHUB_TOKEN`. |
-| `--base` | string | Base branch for local diff mode (default `main`). |
-| `--head` | string | Head ref for local diff mode (default `HEAD`). |
+| `--dry-run` | boolean | Print the description and record, but not the new PR body. With `--update`, the PR is not changed. |
+| `--write-file` | boolean | Write the change record to `.changes/<pr>.json` (`local.json` in local mode). |
+| `--update` | boolean | Replace the PR body with the generated body. Needs `--pr`. Off by default. |
 
-Behavior:
-1. Loads `.describerc.json`.
-2. Collects PR data via Octokit (GitHub path) or `git diff`/`git log` (local path).
-3. Skips fork PRs ("Fork PRs are not supported yet").
-4. Skips PRs carrying any `skip_labels` label.
-5. Parses file diffs, applies `ignore` globs, bails if nothing remains.
-6. Picks the provider (`mock` when `MOCK_DATA=true`, else `config.provider`).
-7. Chunks the diff (4000-token budget; reduces large diffs by summarizing chunks).
-8. Generates the description + change record, filters unsupported claims by evidence.
-9. Truncates the description to 250 words unless the change is large.
-10. Renders a marker block, preserves human-edited blocks (appends a regenerate checkbox), otherwise replaces/inserts the block.
-11. Unless `--dry-run`, prints the new PR body.
+Behavior, in order:
+
+1. Loads `.describerc.json` (defaults apply when it is missing).
+2. Reads the PR (title, body, commits, labels, template, diff) through the GitHub API, or reads the git range locally.
+3. Skips fork PRs and PRs with a `skip_labels` label.
+4. Drops files matching `ignore` (plus the built-in list, see [CONFIGURATION.md](CONFIGURATION.md)). Stops if nothing remains.
+5. If the existing marker block was edited by a person, keeps it, adds a regenerate checkbox, and stops. The model does not run.
+6. Otherwise generates the description and record. Large diffs are summarized in chunks first.
+7. Prints the description, the change record, any `Needs review` fields, and how many sentences were dropped as ungrounded.
+8. Writes `.changes/<pr>.json` if `--write-file` is set.
+9. With `--update`, writes the body to the PR. Otherwise, unless `--dry-run`, prints the body.
+
+Outputs go to stdout. Problems go to stderr.
 
 ## changelog
 
+Build release notes from the change records in the PRs merged between two refs.
+
 ```
-node dist/cli.js changelog --from v1.0.0 --to v1.1.0
+node dist/cli.js changelog --from v1.0.0 --to v1.1.0 [--format markdown] [--audience customer] [--package NAME]
 ```
 
-Stub. Prints `changelog --from <from> --to <to> (stub)`. The grouping/rendering logic lives in `src/changelog/index.ts` (renderers: `renderMarkdown`, `renderGitHubRelease`, `renderChangeset`, `renderSlackPayload`) but is not wired to a CLI command yet.
+| Flag | Value | Description |
+|------|-------|-------------|
+| `--from` | ref | Start ref (required). |
+| `--to` | ref | End ref (required). |
+| `--format` | `markdown` \| `github-release` \| `changeset` \| `slack` | Output format. Default `markdown`. |
+| `--audience` | `customer` \| `developer` \| `internal` | Which summary to use. Records with audience `internal` are left out of the output. |
+| `--package` | string | Package name for the `changeset` format. Defaults to `name` in `package.json`. |
+| `--owner`, `--repo`, `--token` | string | As for `describe`. |
 
-| Flag | Type | Description |
-|------|------|-------------|
-| `--from` | string | Start ref/tag. |
-| `--to` | string | End ref/tag. |
+PR numbers come from merge commits and `(#N)` squash suffixes. A PR without a record block is listed on stderr as missing. See [CHANGELOG.md](CHANGELOG.md).
 
 ## init
 
@@ -55,13 +61,9 @@ Stub. Prints `changelog --from <from> --to <to> (stub)`. The grouping/rendering 
 node dist/cli.js init [--force]
 ```
 
-Writes `.describerc.json` with the default template. Errors if the file already exists unless `--force` is passed.
-
-| Flag | Type | Description |
-|------|------|-------------|
-| `--force` | boolean | Overwrite an existing `.describerc.json`. |
+Writes `.describerc.json` in the current directory with a starter template. Refuses to overwrite an existing file unless `--force` is given.
 
 ## Exit codes
 
-- `0` success.
-- `1` unknown command, missing owner/repo, config already exists (without `--force`), or an unexpected error.
+- `0`: success, including skipped PRs.
+- `1`: a usage error (unknown command or format, missing `--from`/`--to`, `--update` without `--pr`, existing config without `--force`), or any unexpected error.
