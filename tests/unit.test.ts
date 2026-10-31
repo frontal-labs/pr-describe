@@ -2,26 +2,26 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { on, parseArgs, value } from "../src/args";
 import { renderChangeset, renderMarkdown } from "../src/changelog";
-import {
-  chunkDiff,
-  estimateTokens,
-  MAX_SUMMARY_CALLS,
-} from "../src/core/chunk";
-import { prNumbersFromMessages } from "../src/core/collect";
-import {
-  CONFIG_FILE,
-  loadConfig,
-  parseConfig,
-} from "../src/core/config-loader";
-import { filterPaths, hasSkipLabel, matchGlob } from "../src/core/filter";
+import { chunkDiff, estimateTokens, MAX_SUMMARY_CALLS } from "../src/chunk";
+import { prNumbersFromMessages } from "../src/collect";
+import { DEFAULT_CONFIG, type ResolvedConfig } from "../src/config";
+import { type DescribeOutcome, runDescribe } from "../src/describe";
+import { filterPaths, hasSkipLabel, matchGlob } from "../src/filter";
 import {
   changedPaths,
-  filterClaimsByEvidence,
   generateDescription,
   resolveScope,
   typeFromPaths,
-} from "../src/core/generate";
+} from "../src/generate";
+import {
+  fileChanges,
+  groundSentences,
+  hasRiskSignal,
+  hasTestSignal,
+} from "../src/grounding";
+import { CONFIG_FILE, loadConfig, parseConfig } from "../src/loader";
 import {
   appendRegenerateCheckbox,
   extractMarkerBlock,
@@ -29,8 +29,7 @@ import {
   isEdited,
   renderMarkerBlock,
   replaceOrInsertMarkerBlock,
-} from "../src/core/markers";
-import { coerceRecord, recordToJson, validateRecord } from "../src/core/record";
+} from "../src/markers";
 import {
   CONTEXT_SIZE,
   DEFAULT_MODEL,
@@ -38,6 +37,7 @@ import {
   type Provider,
   resolveModel,
 } from "../src/providers";
+import { coerceRecord, recordToJson, validateRecord } from "../src/record";
 
 describe("filter", () => {
   it("ignores lockfiles", () => {
@@ -184,20 +184,6 @@ describe("record", () => {
   });
 });
 
-describe("filterClaimsByEvidence", () => {
-  it("drops unsupported bullets", () => {
-    const record = coerceRecord({
-      evidence: ["src/api.ts"],
-      type: "fix",
-    });
-    const description =
-      "## Summary\n\n- Fixed the API\n- Random claim\n\n## Changes\n\n- Updated src/api.ts";
-    const result = filterClaimsByEvidence(record, description);
-    expect(result.description).toContain("Updated src/api.ts");
-    expect(result.description).not.toContain("Random claim");
-  });
-});
-
 describe("chunk reduction", () => {
   it("keeps every file's content when a large diff is reduced", async () => {
     const provider: Provider = {
@@ -275,29 +261,21 @@ describe("provider", () => {
 });
 
 describe("generateDescription", () => {
-  const config = {
-    ignore: [],
-    large_change_threshold: 500,
-    max_diff_lines: 4000,
-    provider: "mock",
-    scopes: {},
-    sections: ["summary", "changes", "testing", "risks"],
-    skip_labels: [],
-    tone: "concise",
-  } as never;
+  const config: ResolvedConfig = { ...DEFAULT_CONFIG, scopes: {} };
+  const diff = "diff --git a/src/x.ts b/src/x.ts\n+x\n";
   const data = {
     body: "",
     commits: ["fix: x"],
     config,
-    diff: "+x",
+    files: [{ diff, path: "src/x.ts" }],
     issueNumbers: [],
+    promptDiff: diff,
     prTemplate: null,
     title: "t",
   };
   const valid = {
     audience: "customer",
     breaking: false,
-    changes: ["Adds x in src/x.ts"],
     evidence: ["src/x.ts"],
     links: [],
     risks: [],
@@ -308,58 +286,115 @@ describe("generateDescription", () => {
     testing: [],
     type: "feature",
   };
+  const provider = (out: () => unknown): Provider => ({
+    dispose: async () => {
+      // no model to release
+    },
+    generateObject: async () => out(),
+    generateText: async () => "",
+    name: "fake",
+  });
 
-  it("renders headings from the config sections", async () => {
-    const provider: Provider = {
-      dispose: async () => {
-        // no model to release
-      },
-      generateObject: async () => valid,
-      generateText: async () => "",
-      name: "fake",
-    };
-    const result = await generateDescription(provider, data);
-    expect(result.record.type).toBe("feature");
+  it("writes the changes list from code and renders the headings", async () => {
+    const result = await generateDescription(
+      provider(() => valid),
+      data
+    );
     expect(result.description).toBe(
-      "## Summary\n\nAdds x.\n\n## Changes\n\n- Adds x in src/x.ts\n\n## Testing\n\n- None\n\n## Risks\n\n- None"
+      "## Summary\n\nAdds x.\n\n## Changes\n\n- `src/x.ts` (+1 −0)\n\n## Testing\n\n- Not stated\n\n## Risks\n\n- Not stated"
     );
   });
 
-  it("drops links that are not in the input and placeholder evidence", async () => {
-    const provider: Provider = {
-      dispose: async () => {
-        // no model to release
-      },
-      generateObject: async () => ({
-        ...valid,
-        evidence: ["none", "src/x.ts"],
-        links: ["https://example.invalid/pull/1"],
-      }),
-      generateText: async () => "",
-      name: "fake",
+  it("drops summary sentences that name a file not in the diff", async () => {
+    const out = { ...valid, summary: "Adds x. Also rewrites src/ghost.ts." };
+    const result = await generateDescription(
+      provider(() => out),
+      data
+    );
+    expect(result.description).toContain("## Summary\n\nAdds x.");
+    expect(result.description).not.toContain("ghost");
+  });
+
+  it("keeps only evidence and links that exist in the input", async () => {
+    const out = {
+      ...valid,
+      evidence: ["none", "src/x.ts", "src/ghost.ts"],
+      links: ["https://example.invalid/pull/1"],
     };
-    const result = await generateDescription(provider, data);
-    expect(result.record.links).toEqual([]);
+    const result = await generateDescription(
+      provider(() => out),
+      data
+    );
     expect(result.record.evidence).toEqual(["src/x.ts"]);
+    expect(result.record.links).toEqual([]);
+  });
+
+  it("does not report tests unless tests or the PR text show them", async () => {
+    const out = { ...valid, testing: ["Adds unit tests for rounding."] };
+    const result = await generateDescription(
+      provider(() => out),
+      data
+    );
+    expect(result.description).toContain("## Testing\n\n- Not stated");
+  });
+
+  it("reports tests when a test file changed", async () => {
+    const testDiff = "diff --git a/src/x.test.ts b/src/x.test.ts\n+x\n";
+    const out = { ...valid, testing: ["Covers the new behavior."] };
+    const result = await generateDescription(
+      provider(() => out),
+      {
+        ...data,
+        files: [{ diff: testDiff, path: "src/x.test.ts" }],
+        promptDiff: testDiff,
+      }
+    );
+    expect(result.description).toContain("- Covers the new behavior.");
+  });
+
+  it("clears breaking unless the PR text says so", async () => {
+    const out = { ...valid, breaking: true };
+    const result = await generateDescription(
+      provider(() => out),
+      data
+    );
+    expect(result.record.breaking).toBe(false);
   });
 
   it("fails when the summary stays empty", async () => {
     let calls = 0;
-    const provider: Provider = {
-      dispose: async () => {
-        // no model to release
-      },
-      generateObject: async () => {
-        calls++;
-        return { ...valid, summary: "   " };
-      },
-      generateText: async () => "",
-      name: "fake",
-    };
-    await expect(generateDescription(provider, data)).rejects.toThrow(
-      /empty summary/
-    );
+    const p = provider(() => {
+      calls++;
+      return { ...valid, summary: "   " };
+    });
+    await expect(generateDescription(p, data)).rejects.toThrow(/empty summary/);
     expect(calls).toBe(2);
+  });
+});
+
+describe("grounding", () => {
+  it("counts added and removed lines per file", () => {
+    const files = fileChanges([
+      { diff: "+++ b/a.ts\n-old\n+new\n+more\n", path: "a.ts" },
+    ]);
+    expect(files).toEqual([{ added: 2, path: "a.ts", removed: 1 }]);
+  });
+
+  it("keeps grounded sentences and drops the others", () => {
+    const source = "src/a.ts renames parseId";
+    expect(
+      groundSentences("Renames parseId in src/a.ts. Moves src/b.ts.", source)
+        .text
+    ).toBe("Renames parseId in src/a.ts.");
+  });
+
+  it("detects test and risk signals from paths and PR text", () => {
+    expect(hasTestSignal(["src/a.test.ts"], "")).toBe(true);
+    expect(hasTestSignal(["src/a.ts"], "adds tests")).toBe(true);
+    expect(hasTestSignal(["src/a.ts"], "")).toBe(false);
+    expect(hasRiskSignal(["db/migrations/1.sql"], "")).toBe(true);
+    expect(hasRiskSignal(["src/a.ts"], "BREAKING change")).toBe(true);
+    expect(hasRiskSignal(["src/a.ts"], "")).toBe(false);
   });
 });
 
@@ -399,6 +434,11 @@ describe("type from paths", () => {
     expect(typeFromPaths([".github/workflows/ci.yml", "bun.lock"])).toBe(
       "internal"
     );
+  });
+
+  it("classifies test-only changes as internal", () => {
+    expect(typeFromPaths(["tests/billing/pricing.test.ts"])).toBe("internal");
+    expect(typeFromPaths(["src/a.spec.ts", "src/b.test.ts"])).toBe("internal");
   });
 
   it("leaves mixed or product changes to the model", () => {
@@ -474,56 +514,6 @@ describe("record output", () => {
   });
 });
 
-describe("evidence filter", () => {
-  const base = { evidence: [] as string[] } as never;
-  const desc = [
-    "## Summary",
-    "",
-    "Adds rounding.",
-    "",
-    "## Changes",
-    "",
-    "- Rounds prices in src/billing/pricing.ts",
-    "- Rewrites the cache",
-    "",
-    "## Testing",
-    "",
-    "- Adds a test for rounding",
-  ].join("\n");
-
-  it("keeps every bullet when there is no evidence to check", () => {
-    const out = filterClaimsByEvidence(base, desc).description;
-    expect(out).toContain("- Rewrites the cache");
-    expect(out).toContain("- Adds a test for rounding");
-  });
-
-  it("drops bullets that mention no evidence entry", () => {
-    const record = { ...(base as object), evidence: ["pricing.ts"] } as never;
-    const out = filterClaimsByEvidence(record, desc).description;
-    expect(out).toContain("- Rounds prices in src/billing/pricing.ts");
-    expect(out).not.toContain("- Rewrites the cache");
-  });
-
-  it("puts - None under a section whose bullets were all dropped", () => {
-    const record = {
-      ...(base as object),
-      evidence: ["nothing-matches"],
-    } as never;
-    const out = filterClaimsByEvidence(record, desc).description;
-    expect(out).toContain("## Testing\n\n- None");
-  });
-
-  it("never touches the summary paragraph", () => {
-    const record = {
-      ...(base as object),
-      evidence: ["nothing-matches"],
-    } as never;
-    expect(filterClaimsByEvidence(record, desc).description).toContain(
-      "Adds rounding."
-    );
-  });
-});
-
 describe("changelog", () => {
   const entry = (n: number, type: string, breaking = false) => ({
     prNumber: n,
@@ -533,7 +523,7 @@ describe("changelog", () => {
       summary_customer: `c${n}`,
       summary_internal: `i${n}`,
       type,
-    } as never),
+    }),
     title: `t${n}`,
   });
 
@@ -590,5 +580,186 @@ describe("marker round trip", () => {
     const block = extractMarkerBlock(body);
     expect(block).not.toBeNull();
     expect(JSON.parse(block?.recordJson ?? "{}").type).toBe("fix");
+  });
+});
+
+describe("second opinion on uncertain fields", () => {
+  const config: ResolvedConfig = { ...DEFAULT_CONFIG, scopes: {} };
+  const diff = "diff --git a/src/x.ts b/src/x.ts\n+x\n";
+  const data = {
+    body: "",
+    commits: ["fix: x"],
+    config,
+    files: [{ diff, path: "src/x.ts" }],
+    issueNumbers: [],
+    promptDiff: diff,
+    prTemplate: null,
+    title: "t",
+  };
+  const first = {
+    audience: "customer",
+    breaking: false,
+    evidence: [],
+    links: [],
+    risks: [],
+    scope: "core",
+    summary: "Adds x.",
+    summary_customer: "Adds x",
+    summary_internal: "Adds x",
+    testing: [],
+    type: "feature",
+  };
+
+  it("flags type and scope when the second answer disagrees", async () => {
+    let calls = 0;
+    const provider: Provider = {
+      dispose: async () => {
+        // no model to release
+      },
+      generateObject: async () => {
+        calls++;
+        return calls === 1 ? first : { scope: "api", type: "fix" };
+      },
+      generateText: async () => "",
+      name: "fake",
+    };
+    const result = await generateDescription(provider, data);
+    expect(result.review).toEqual(["type", "scope"]);
+    expect(result.description.startsWith("> **Needs review:**")).toBe(true);
+  });
+
+  it("does not ask again when code already decided type and scope", async () => {
+    let calls = 0;
+    const docsDiff = "diff --git a/README.md b/README.md\n+x\n";
+    const provider: Provider = {
+      dispose: async () => {
+        // no model to release
+      },
+      generateObject: async () => {
+        calls++;
+        return { ...first, scope: "docs" };
+      },
+      generateText: async () => "",
+      name: "fake",
+    };
+    const config2: ResolvedConfig = {
+      ...DEFAULT_CONFIG,
+      scopes: { docs: ["*.md"] },
+    };
+    const result = await generateDescription(provider, {
+      ...data,
+      config: config2,
+      files: [{ diff: docsDiff, path: "README.md" }],
+      promptDiff: docsDiff,
+    });
+    expect(calls).toBe(1);
+    expect(result.review).toEqual([]);
+    expect(result.record.type).toBe("docs");
+  });
+});
+
+describe("describe pipeline", () => {
+  const diff = "diff --git a/src/x.ts b/src/x.ts\n+x\n";
+  const config: ResolvedConfig = { ...DEFAULT_CONFIG, scopes: {} };
+  const baseCollected = {
+    author: "a",
+    base: "main",
+    body: "",
+    branch: "feat",
+    commits: ["fix: x"],
+    diff,
+    fork: false,
+    head: "abc",
+    issueNumbers: [],
+    labels: [],
+    owner: "o",
+    prNumber: 7,
+    prTemplate: null,
+    repo: "r",
+    title: "Fix x",
+  };
+  const mock = getProvider("mock");
+
+  it("skips fork PRs without calling the model", async () => {
+    const outcome = await runDescribe(
+      { collect: {}, config },
+      {
+        collect: async () => ({ ...baseCollected, fork: true, headOwner: "x" }),
+        provider: mock,
+      }
+    );
+    expect(outcome.status).toBe("skipped");
+  });
+
+  it("skips PRs with a skip label", async () => {
+    const outcome = await runDescribe(
+      { collect: {}, config: { ...config, skip_labels: ["skip-describe"] } },
+      {
+        collect: async () => ({ ...baseCollected, labels: ["skip-describe"] }),
+        provider: mock,
+      }
+    );
+    expect(outcome.status).toBe("skipped");
+  });
+
+  it("keeps a human-edited block without calling the model", async () => {
+    const throwing: Provider = {
+      dispose: async () => {
+        // no model to release
+      },
+      generateObject: async () => {
+        throw new Error("model must not run for edited PRs");
+      },
+      generateText: async () => {
+        throw new Error("model must not run for edited PRs");
+      },
+      name: "throwing",
+    };
+    const first = await runDescribe(
+      { collect: {}, config },
+      { collect: async () => baseCollected, provider: mock }
+    );
+    if (first.status !== "generated") {
+      throw new Error("expected a generated outcome");
+    }
+    // Anchor on the summary heading: the same sentence also appears in the JSON block.
+    const edited = first.body.replace(
+      "## Summary\n\nMock change description.",
+      "## Summary\n\nHand edited."
+    );
+    const outcome: DescribeOutcome = await runDescribe(
+      { collect: {}, config },
+      {
+        collect: async () => ({ ...baseCollected, body: edited }),
+        provider: throwing,
+      }
+    );
+    expect(outcome.status).toBe("edited");
+  });
+
+  it("returns a generated body with the marker block", async () => {
+    const outcome = await runDescribe(
+      { collect: {}, config },
+      { collect: async () => baseCollected, provider: mock }
+    );
+    expect(outcome.status).toBe("generated");
+    if (outcome.status === "generated") {
+      expect(outcome.body).toContain("<!-- describe:start");
+      expect(outcome.record.type).toBe("feature");
+    }
+  });
+});
+
+describe("arguments", () => {
+  it("reads the command and typed flags", () => {
+    const cli = parseArgs(["describe", "--pr", "42", "--dry-run", "--update"]);
+    expect(cli.command).toBe("describe");
+    expect(value(cli, "pr")).toBe("42");
+    expect(on(cli, "dry-run")).toBe(true);
+    expect(on(cli, "write-file")).toBe(false);
+  });
+
+  it("defaults the command to describe", () => {
+    expect(parseArgs(["--dry-run"]).command).toBe("describe");
   });
 });

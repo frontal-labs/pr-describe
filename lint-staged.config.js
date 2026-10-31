@@ -1,3 +1,3 @@
 export default {
-	"*": "bunx ultracite fix --no-errors-on-unmatched --files-ignore-unknown=true",
+  "*.{js,ts,jsx,tsx,json}": "bunx ultracite fix --files-ignore-unknown=true",
 };

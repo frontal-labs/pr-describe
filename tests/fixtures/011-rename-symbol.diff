@@ -1,0 +1,8 @@
+diff --git a/src/ui/format.ts b/src/ui/format.ts
+--- a/src/ui/format.ts
++++ b/src/ui/format.ts
+@@ -1,4 +1,4 @@
+-export function fmtDate(d: Date): string {
++export function formatDate(d: Date): string {
+   return d.toISOString().slice(0, 10);
+ }

@@ -1,16 +1,33 @@
-// Runs the real model over the fixtures and reports how often the change
-// record's type, scope and breaking flag match the expected values.
+// Runs the real model over the fixtures and reports:
+// - how often type, scope and breaking match the expected values,
+// - how many fields the model could not confirm (second opinion disagreed),
+// - how many sentences grounding removed, and
+// - whether any concrete claim left in the output is missing from the input.
 // Usage: bun run eval            (env: EVAL_MODEL to pick a model)
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "../src/core/config";
-import { generateDescription } from "../src/core/generate";
+import { parseFileDiffs } from "../src/collect";
+import { DEFAULT_CONFIG, type ResolvedConfig } from "../src/config";
+import { generateDescription } from "../src/generate";
+import { claimTokens, isGrounded } from "../src/grounding";
 import { getProvider } from "../src/providers";
 
 interface Expected {
   breaking: boolean;
   scope: string;
+  title?: string;
   type: string;
+}
+
+interface Row {
+  actual: { breaking: boolean; scope: string; type: string } | null;
+  droppedSentences: number;
+  error?: string;
+  expected: Expected;
+  ms: number;
+  name: string;
+  review: string[];
+  ungrounded: string[];
 }
 
 const dir = join(import.meta.dir, "fixtures");
@@ -33,33 +50,41 @@ const scopes = Object.fromEntries(
     [],
   ])
 );
+const config: ResolvedConfig = { ...DEFAULT_CONFIG, scopes };
 
 const provider = getProvider("ggml-node", {
   model: process.env.EVAL_MODEL || undefined,
 });
 
-const rows: Array<{
-  actual: { breaking: boolean; scope: string; type: string } | null;
-  error?: string;
-  expected: Expected;
-  name: string;
-  ms: number;
-}> = [];
+/** Claims in the rendered description that the input does not contain. */
+function ungroundedClaims(description: string, source: string): string[] {
+  return claimTokens(description).filter((t) => !isGrounded(t, source));
+}
+
+const rows: Row[] = [];
 
 try {
   for (const name of names) {
     const started = Date.now();
     const diff = readFileSync(join(dir, `${name}.diff`), "utf-8");
     const expected = expectations.get(name) as Expected;
+    const title = expected.title ?? `Fixture ${name}`;
+    const files = parseFileDiffs(diff);
+    const source = [
+      title,
+      `fixture ${name}`,
+      ...files.map((f) => `${f.path}\n${f.diff}`),
+    ].join("\n");
     try {
       const result = await generateDescription(provider, {
         body: "",
         commits: [`fixture ${name}`],
-        config: { ...DEFAULT_CONFIG, scopes } as never,
-        diff,
+        config,
+        files,
         issueNumbers: [],
+        promptDiff: diff,
         prTemplate: null,
-        title: `Fixture ${name}`,
+        title,
       });
       rows.push({
         actual: {
@@ -67,44 +92,58 @@ try {
           scope: result.record.scope,
           type: result.record.type,
         },
+        droppedSentences: result.droppedSentences,
         expected,
         ms: Date.now() - started,
         name,
+        review: result.review,
+        ungrounded: ungroundedClaims(result.description, source),
       });
     } catch (err) {
       rows.push({
         actual: null,
+        droppedSentences: 0,
         error: (err as Error).message,
         expected,
         ms: Date.now() - started,
         name,
+        review: [],
+        ungrounded: [],
       });
     }
-    const last = rows.at(-1) as (typeof rows)[number];
-    console.log(
-      `${name}: ${last.error ? `ERROR ${last.error}` : JSON.stringify(last.actual)} (${last.ms} ms)`
-    );
+    const last = rows.at(-1) as Row;
+    const detail = last.error
+      ? `ERROR ${last.error}`
+      : `${JSON.stringify(last.actual)} review=${last.review.join("+") || "-"} dropped=${last.droppedSentences} ungrounded=${last.ungrounded.length}`;
+    console.log(`${name}: ${detail} (${last.ms} ms)`);
   }
 } finally {
   await provider.dispose();
 }
 
-const count = (pick: (r: (typeof rows)[number]) => boolean) =>
-  rows.filter(pick).length;
-const typeOk = count((r) => r.actual?.type === r.expected.type);
-const scopeOk = count((r) => r.actual?.scope === r.expected.scope);
-const breakingOk = count((r) => r.actual?.breaking === r.expected.breaking);
-const errors = count((r) => r.actual === null);
-const total = rows.length;
-
+const count = (pick: (r: Row) => boolean) => rows.filter(pick).length;
 const summary = {
-  breaking: { correct: breakingOk, total },
-  errors,
+  breaking: {
+    correct: count((r) => r.actual?.breaking === r.expected.breaking),
+    total: rows.length,
+  },
+  droppedSentences: rows.reduce((sum, r) => sum + r.droppedSentences, 0),
+  errors: count((r) => r.actual === null),
   model: process.env.EVAL_MODEL || "default",
-  scope: { correct: scopeOk, total },
-  type: { correct: typeOk, total },
+  review: { flagged: count((r) => r.review.length > 0), total: rows.length },
+  scope: {
+    correct: count((r) => r.actual?.scope === r.expected.scope),
+    total: rows.length,
+  },
+  type: {
+    correct: count((r) => r.actual?.type === r.expected.type),
+    total: rows.length,
+  },
+  ungroundedOutputs: count((r) => r.ungrounded.length > 0),
 };
 console.log(JSON.stringify(summary, null, 2));
 
-const reportPath = join(dir, "eval-report.json");
-writeFileSync(reportPath, JSON.stringify({ rows, summary }, null, 2));
+writeFileSync(
+  join(dir, "eval-report.json"),
+  JSON.stringify({ rows, summary }, null, 2)
+);

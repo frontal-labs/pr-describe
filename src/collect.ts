@@ -1,8 +1,8 @@
 import { Octokit } from "@octokit/rest";
-import { env } from "../env";
-import { readTextFileSync, runGit } from "../runtime";
+import { env } from "./env";
 import { extractMarkerBlock } from "./markers";
 import { type ChangeRecord, coerceRecord } from "./record";
+import { readTextFileSync, runGit } from "./runtime";
 
 export interface CollectedData {
   author: string;
@@ -26,6 +26,7 @@ export interface CollectedData {
 }
 
 export interface CollectOptions {
+  apiUrl?: string;
   base?: string;
   head?: string;
   owner?: string;
@@ -51,8 +52,13 @@ export function resolveRepo(options: { owner?: string; repo?: string }): {
   return { owner, repo };
 }
 
-export function createOctokit(token?: string): Octokit {
-  return token ? new Octokit({ auth: token }) : new Octokit();
+/** GitHub API client. `apiUrl` defaults to GITHUB_API_URL, then github.com. */
+export function createOctokit(token?: string, apiUrl?: string): Octokit {
+  const baseUrl = apiUrl ?? env.GITHUB_API_URL;
+  return new Octokit({
+    ...(token ? { auth: token } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+  });
 }
 
 export async function collectFromPR(
@@ -62,7 +68,7 @@ export async function collectFromPR(
   if (options.prNumber) {
     const { owner, repo } = resolveRepo(options);
     return collectFromPRNumber(
-      createOctokit(token),
+      createOctokit(token, options.apiUrl),
       owner,
       repo,
       options.prNumber
@@ -78,6 +84,7 @@ export async function collectFromPR(
 
 /** Replace a PR's body. Requires a token with pull-requests write access. */
 export async function updatePullRequestBody(options: {
+  apiUrl?: string;
   owner: string;
   repo: string;
   prNumber: number;
@@ -88,7 +95,7 @@ export async function updatePullRequestBody(options: {
   if (!token) {
     throw new Error("Updating a PR needs GITHUB_TOKEN or --token");
   }
-  await createOctokit(token).rest.pulls.update({
+  await createOctokit(token, options.apiUrl).rest.pulls.update({
     body: options.body,
     owner: options.owner,
     pull_number: options.prNumber,
@@ -122,13 +129,17 @@ export interface ChangelogEntry {
  * GitHub's compare API returns at most 250 commits.
  */
 export async function listChangelogEntries(options: {
+  apiUrl?: string;
   owner: string;
   repo: string;
   from: string;
   to: string;
   token?: string;
 }): Promise<{ entries: ChangelogEntry[]; missing: number[] }> {
-  const octokit = createOctokit(options.token ?? env.GITHUB_TOKEN);
+  const octokit = createOctokit(
+    options.token ?? env.GITHUB_TOKEN,
+    options.apiUrl
+  );
   const { data } = await octokit.rest.repos.compareCommitsWithBasehead({
     basehead: `${options.from}...${options.to}`,
     owner: options.owner,

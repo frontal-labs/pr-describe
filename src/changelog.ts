@@ -1,8 +1,8 @@
-import type { Audience, ChangeRecord, ChangeType } from "../core/record";
+import type { Audience, ChangeRecord, ChangeType } from "./record";
 
 export interface ChangelogOptions {
   audience?: Audience;
-  format?: "markdown" | "github-release" | "changeset" | "slack";
+  format?: ChangelogFormat;
   from: string;
   /** Required for the changeset format: the package the changeset bumps. */
   packageName?: string;
@@ -178,4 +178,37 @@ export function renderSlackPayload(
     sections,
   };
   return JSON.stringify(payload, null, 2);
+}
+
+export type ChangelogFormat =
+  | "markdown"
+  | "github-release"
+  | "changeset"
+  | "slack";
+
+export const CHANGELOG_FORMATS: readonly ChangelogFormat[] = [
+  "markdown",
+  "github-release",
+  "changeset",
+  "slack",
+];
+
+/** Render records in the requested format. Each format has its own renderer. */
+export function renderChangelog(
+  format: ChangelogFormat,
+  records: RecordWithPR[],
+  options: ChangelogOptions
+): string {
+  switch (format) {
+    case "markdown":
+      return renderMarkdown(records, options);
+    case "github-release":
+      return renderGitHubRelease(records, options);
+    case "changeset":
+      return renderChangeset(records, options);
+    case "slack":
+      return renderSlackPayload(records, options);
+    default:
+      throw new Error(`Unknown changelog format: ${String(format)}`);
+  }
 }

@@ -1,0 +1,304 @@
+{
+  "rows": [
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "core",
+        "type": "fix"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "feature",
+        "scope": "billing",
+        "breaking": false
+      },
+      "ms": 28101,
+      "name": "001-billing-pricing",
+      "review": ["type", "scope"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "api",
+        "type": "fix"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "fix",
+        "scope": "api",
+        "breaking": false
+      },
+      "ms": 12532,
+      "name": "002-api-timeout",
+      "review": ["type"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "cache",
+        "type": "refactor"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "perf",
+        "scope": "cache",
+        "breaking": false
+      },
+      "ms": 14492,
+      "name": "003-cache-lru",
+      "review": ["type", "scope"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "core",
+        "type": "refactor"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "refactor",
+        "scope": "auth",
+        "breaking": false
+      },
+      "ms": 17224,
+      "name": "004-auth-refactor",
+      "review": ["scope"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "core",
+        "type": "docs"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "docs",
+        "scope": "readme",
+        "breaking": false
+      },
+      "ms": 15081,
+      "name": "005-docs-update",
+      "review": ["scope"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": true,
+        "scope": "api",
+        "type": "fix"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "breaking",
+        "scope": "api",
+        "breaking": true
+      },
+      "ms": 14776,
+      "name": "006-api-breaking",
+      "review": ["type"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "ci",
+        "type": "internal"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "internal",
+        "scope": "ci",
+        "breaking": false
+      },
+      "ms": 19130,
+      "name": "007-ci-workflow",
+      "review": [],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "ui",
+        "type": "fix"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "feature",
+        "scope": "ui",
+        "breaking": false
+      },
+      "ms": 18075,
+      "name": "008-ui-button",
+      "review": ["type"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "deps",
+        "type": "internal"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "internal",
+        "scope": "deps",
+        "breaking": false
+      },
+      "ms": 40663,
+      "name": "009-deps-update",
+      "review": ["type"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "ui",
+        "type": "fix"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "fix",
+        "scope": "ui",
+        "breaking": false
+      },
+      "ms": 15005,
+      "name": "010-ui-form-input",
+      "review": ["type"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "api",
+        "type": "refactor"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "refactor",
+        "scope": "ui",
+        "breaking": false,
+        "title": "Rename fmtDate to formatDate"
+      },
+      "ms": 77916,
+      "name": "011-rename-symbol",
+      "review": ["scope"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "billing",
+        "type": "feature"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "internal",
+        "scope": "billing",
+        "breaking": false,
+        "title": "Add a rounding test for pricing"
+      },
+      "ms": 34559,
+      "name": "012-tests-only",
+      "review": [],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "deps",
+        "type": "internal"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "internal",
+        "scope": "deps",
+        "breaking": false,
+        "title": "Bump zod to 4.6.7"
+      },
+      "ms": 26413,
+      "name": "013-lockfile-only",
+      "review": [],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": true,
+        "scope": "api",
+        "type": "breaking"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "breaking",
+        "scope": "api",
+        "breaking": true,
+        "title": "Remove the legacy v1 export endpoint (breaking)"
+      },
+      "ms": 25465,
+      "name": "014-remove-endpoint",
+      "review": [],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "search",
+        "type": "perf"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "perf",
+        "scope": "search",
+        "breaking": false,
+        "title": "Speed up findAll with a lookup map"
+      },
+      "ms": 25874,
+      "name": "015-perf-lookup",
+      "review": ["type", "scope"],
+      "ungrounded": []
+    },
+    {
+      "actual": {
+        "breaking": false,
+        "scope": "core",
+        "type": "fix"
+      },
+      "droppedSentences": 0,
+      "expected": {
+        "type": "fix",
+        "scope": "auth",
+        "breaking": false,
+        "title": "Fix crash when session is missing"
+      },
+      "ms": 19013,
+      "name": "016-fix-null-crash",
+      "review": ["scope"],
+      "ungrounded": []
+    }
+  ],
+  "summary": {
+    "breaking": {
+      "correct": 16,
+      "total": 16
+    },
+    "droppedSentences": 0,
+    "errors": 0,
+    "model": "default",
+    "review": {
+      "flagged": 12,
+      "total": 16
+    },
+    "scope": {
+      "correct": 11,
+      "total": 16
+    },
+    "type": {
+      "correct": 11,
+      "total": 16
+    },
+    "ungroundedOutputs": 0
+  }
+}

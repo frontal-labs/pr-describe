@@ -29,8 +29,9 @@ export function extractMarkerBlock(body: string): MarkerBlock | null {
   const jsonMatch = /```json\n([\s\S]*?)```/.exec(inner);
   const recordJson = jsonMatch ? jsonMatch[1].trim() : "";
 
+  // Drop the start marker's "hash=… -->" tail and the JSON record block.
   const description = inner
-    .replace(/hash=[a-f0-9]{64}/i, "")
+    .replace(/^\s*hash=[a-f0-9]{64}\s*-->/i, "")
     .replace(/```json[\s\S]*?```/g, "")
     .trim();
 
@@ -49,7 +50,9 @@ export function isEdited(body: string, storedHash: string): boolean {
   if (!storedHash) {
     return false;
   }
-  return block.hash !== storedHash;
+  // Re-hash the current description. The block's own hash is what the
+  // content was when it was written; a human edit changes the content only.
+  return hashContent(block.description) !== storedHash;
 }
 
 export function hasRegenerateCheckbox(body: string): boolean {

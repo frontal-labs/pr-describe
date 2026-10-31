@@ -1,0 +1,13 @@
+diff --git a/src/api/legacy.ts b/src/api/legacy.ts
+--- a/src/api/legacy.ts
++++ b/src/api/legacy.ts
+@@ -1,9 +1,3 @@
+-export async function exportV1(req: Request): Promise<Response> {
+-  const rows = await load(req);
+-  return Response.json(rows);
+-}
+-
+-export function legacyHeader(): string {
+-  return "v1";
+-}
++// Removed: the v1 export endpoint was deleted.

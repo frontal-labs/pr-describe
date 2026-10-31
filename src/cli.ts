@@ -1,266 +1,174 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  renderChangeset,
-  renderGitHubRelease,
-  renderMarkdown,
-  renderSlackPayload,
-} from "./changelog";
-import { chunkDiff } from "./core/chunk";
+import { type Cli, on, parseArgs, UsageError, value } from "./args";
+import { CHANGELOG_FORMATS, renderChangelog } from "./changelog";
 import {
   collectFromPR,
   listChangelogEntries,
-  parseFileDiffs,
   resolveRepo,
   updatePullRequestBody,
-} from "./core/collect";
-import { CONFIG_FILE, loadConfig } from "./core/config-loader";
-import { filterPaths, hasSkipLabel } from "./core/filter";
-import {
-  filterClaimsByEvidence,
-  type GenerateResult,
-  generateDescription,
-} from "./core/generate";
-import {
-  appendRegenerateCheckbox,
-  extractMarkerBlock,
-  isEdited,
-  renderMarkerBlock,
-  replaceOrInsertMarkerBlock,
-} from "./core/markers";
-import type { Audience } from "./core/record";
-import { recordToJson } from "./core/record";
+} from "./collect";
+import { type DescribeOutcome, runDescribe } from "./describe";
 import { env, isMockData } from "./env";
-import { getProvider } from "./providers";
+import { CONFIG_FILE, loadConfig } from "./loader";
+import { getProvider, type Provider } from "./providers";
+import { type Audience, VALID_AUDIENCES } from "./record";
 
-interface CliArgs {
-  _: string[];
-  audience?: string;
-  base?: string;
-  dryRun?: boolean;
-  force?: boolean;
-  format?: string;
-  from?: string;
-  head?: string;
-  owner?: string;
-  package?: string;
-  polish?: boolean;
-  pr?: string;
-  repo?: string;
-  to?: string;
-  token?: string;
-  update?: boolean;
-  writeFile?: boolean;
-}
-
-function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { _: [] };
-  for (let i = 2; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg.startsWith("--")) {
-      const key = arg.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
-        (args as unknown as Record<string, unknown>)[key] = next;
-        i++;
-      } else {
-        (args as unknown as Record<string, unknown>)[key] = true;
-      }
-    } else {
-      args._.push(arg);
-    }
-  }
-  return args;
-}
-
-async function main() {
-  const args = parseArgs(process.argv);
-  const command = args._[0] ?? "describe";
-
-  if (command === "describe") {
-    await describeCommand(args);
-  } else if (command === "changelog") {
-    await changelogCommand(args);
-  } else if (command === "init") {
-    await initCommand(args);
-  } else {
-    console.error(`Unknown command: ${command}`);
-    process.exit(1);
-  }
-}
-
-function truncateWords(text: string, maxWords: number): string {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= maxWords) {
-    return text.trim();
-  }
-  return `${words.slice(0, maxWords).join(" ")}...`;
-}
-
-async function describeCommand(args: CliArgs) {
-  if (args.update && !args.pr) {
-    console.error("--update needs --pr <number>");
-    process.exit(1);
-  }
-  const config = await loadConfig();
-  const token = args.token ?? env.GITHUB_TOKEN;
-
-  const collected = await collectFromPR({
-    base: args.base,
-    head: args.head,
-    owner: args.owner,
-    prNumber: args.pr ? Number(args.pr) : undefined,
-    repo: args.repo,
-    token,
-  });
-
-  // Fork PRs are skipped by default: the Action would need pull_request_target
-  // to read the base repo's secrets, which is a security tradeoff.
-  if (collected.fork) {
-    console.log(
-      `Skipping PR #${collected.prNumber}: fork from ${collected.headOwner}/${collected.repo}. ` +
-        "Fork PRs are not supported yet."
-    );
-    return;
-  }
-
-  if (hasSkipLabel(collected.labels, config.skip_labels)) {
-    console.log("Skipping PR: has skip label");
-    return;
-  }
-
-  const fileDiffs = filterPaths(parseFileDiffs(collected.diff), { config });
-  if (fileDiffs.length === 0) {
-    console.log("No non-ignored files in diff");
-    return;
-  }
-
-  const providerName = isMockData() ? "mock" : config.provider;
-  const provider = getProvider(providerName, {
-    model: env.MODEL || config.model,
-  });
-
-  const totalLines = fileDiffs.reduce(
-    (sum, f) => sum + f.diff.split("\n").length,
-    0
-  );
-  const isLarge = totalLines > config.large_change_threshold;
-
-  // The model stays loaded in this process, so dispose it on every path.
-  let result: GenerateResult;
+async function main(argv: string[]): Promise<number> {
+  const cli = parseArgs(argv);
   try {
-    const chunks = await chunkDiff(
-      fileDiffs,
-      4000,
-      config.large_change_threshold,
-      provider
+    switch (cli.command) {
+      case "describe":
+        await describeCommand(cli);
+        return 0;
+      case "changelog":
+        await changelogCommand(cli);
+        return 0;
+      case "init":
+        initCommand(cli);
+        return 0;
+      default:
+        throw new UsageError(`Unknown command: ${cli.command}`);
+    }
+  } catch (err) {
+    if (err instanceof UsageError) {
+      console.error(err.message);
+      return 1;
+    }
+    console.error(err);
+    return 1;
+  }
+}
+
+async function describeCommand(cli: Cli): Promise<void> {
+  const update = on(cli, "update");
+  const dryRun = on(cli, "dry-run");
+  const prFlag = value(cli, "pr");
+  const prNumber = prFlag === undefined ? undefined : Number(prFlag);
+  if (update && prNumber === undefined) {
+    throw new UsageError("--update needs --pr <number>");
+  }
+  if (prNumber !== undefined && !Number.isInteger(prNumber)) {
+    throw new UsageError(`--pr must be a number, got "${prFlag}"`);
+  }
+
+  const config = await loadConfig();
+  const token = value(cli, "token") ?? env.GITHUB_TOKEN;
+  const provider: Provider = getProvider(
+    isMockData() ? "mock" : config.provider,
+    {
+      model: env.MODEL || config.model,
+    }
+  );
+
+  let outcome: DescribeOutcome;
+  try {
+    outcome = await runDescribe(
+      {
+        collect: {
+          base: value(cli, "base"),
+          head: value(cli, "head"),
+          owner: value(cli, "owner"),
+          prNumber,
+          repo: value(cli, "repo"),
+          token,
+        },
+        config,
+      },
+      { collect: collectFromPR, provider }
     );
-    result = await generateDescription(provider, {
-      body: collected.body,
-      commits: collected.commits,
-      config,
-      diff: chunks.map((c) => c.diff).join("\n"),
-      issueNumbers: collected.issueNumbers,
-      prTemplate: collected.prTemplate,
-      title: collected.title,
-    });
   } finally {
+    // The model stays loaded in this process, so release it on every path.
     await provider.dispose();
   }
 
-  const filtered = filterClaimsByEvidence(result.record, result.description);
-  const description = isLarge
-    ? filtered.description
-    : truncateWords(filtered.description, 250);
+  if (outcome.status === "skipped") {
+    console.log(`Skipping: ${outcome.reason}`);
+    return;
+  }
 
-  const recordJson = recordToJson(filtered.record);
-  const block = renderMarkerBlock(description, recordJson);
-
-  const existing = extractMarkerBlock(collected.body);
-  const edited = Boolean(existing && isEdited(collected.body, existing.hash));
-  // A human edit inside the marker block is kept. The body only gets a
-  // "Regenerate description" checkbox, and nothing is regenerated.
-  const bodyToSave = edited
-    ? appendRegenerateCheckbox(collected.body)
-    : replaceOrInsertMarkerBlock(collected.body, block);
-
-  if (edited) {
+  if (outcome.status === "edited") {
     console.log(
       "PR description was edited by human; preserving changes and adding regenerate checkbox"
     );
   } else {
     console.log("=== Generated PR description ===");
-    console.log(description);
+    console.log(outcome.description);
     console.log("=== Change record ===");
-    console.log(JSON.stringify(filtered.record, null, 2));
-
-    if (args.writeFile) {
-      const prNum = args.pr ?? "local";
-      const dir = join(process.cwd(), ".changes");
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-      }
-      writeFileSync(join(dir, `${prNum}.json`), `${recordJson}\n`);
+    console.log(JSON.stringify(outcome.record, null, 2));
+    if (outcome.review.length > 0) {
+      console.log(`Needs review: ${outcome.review.join(" and ")}`);
+    }
+    if (outcome.droppedSentences > 0) {
+      console.log(
+        `Dropped ${outcome.droppedSentences} sentence(s) that were not grounded in the input`
+      );
+    }
+    if (on(cli, "write-file")) {
+      writeRecord(`${prNumber ?? "local"}.json`, outcome.recordJson);
     }
   }
 
-  if (args.update && args.dryRun) {
+  if (update && dryRun) {
     console.log("Dry run: PR not updated");
     return;
   }
-  if (args.update) {
+  if (update) {
     await updatePullRequestBody({
-      body: bodyToSave,
-      owner: collected.owner,
-      prNumber: collected.prNumber as number,
-      repo: collected.repo,
+      body: outcome.body,
+      owner: outcome.target.owner,
+      prNumber: outcome.target.prNumber as number,
+      repo: outcome.target.repo,
       token,
     });
-    console.log(`Updated PR #${collected.prNumber}`);
+    console.log(`Updated PR #${outcome.target.prNumber}`);
     return;
   }
-  if (!args.dryRun) {
+  if (!dryRun) {
     console.log("\n--- New PR body (with markers) ---");
-    console.log(bodyToSave);
+    console.log(outcome.body);
   }
 }
 
-const CHANGELOG_RENDERERS = {
-  changeset: renderChangeset,
-  "github-release": renderGitHubRelease,
-  markdown: renderMarkdown,
-  slack: renderSlackPayload,
-} as const;
+function writeRecord(fileName: string, json: string): void {
+  const dir = join(process.cwd(), ".changes");
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  writeFileSync(join(dir, fileName), `${json}\n`);
+}
 
-async function changelogCommand(args: CliArgs) {
-  const { from, to } = args;
+async function changelogCommand(cli: Cli): Promise<void> {
+  const from = value(cli, "from");
+  const to = value(cli, "to");
   if (!(from && to)) {
-    console.error("changelog needs --from <tag> and --to <tag>");
-    process.exit(1);
+    throw new UsageError("changelog needs --from <tag> and --to <tag>");
   }
-  const format = (args.format ??
-    "markdown") as keyof typeof CHANGELOG_RENDERERS;
-  if (!(format in CHANGELOG_RENDERERS)) {
-    console.error(
-      `Unknown format: ${format}. Use one of: ${Object.keys(CHANGELOG_RENDERERS).join(", ")}`
+  const requested = value(cli, "format") ?? "markdown";
+  const format = CHANGELOG_FORMATS.find((f) => f === requested);
+  if (!format) {
+    throw new UsageError(
+      `Unknown format: ${requested}. Use one of: ${CHANGELOG_FORMATS.join(", ")}`
     );
-    process.exit(1);
   }
-  const { owner, repo } = resolveRepo(args);
+  const { owner, repo } = resolveRepo({
+    owner: value(cli, "owner"),
+    repo: value(cli, "repo"),
+  });
   const { entries, missing } = await listChangelogEntries({
     from,
     owner,
     repo,
     to,
-    token: args.token ?? env.GITHUB_TOKEN,
+    token: value(cli, "token") ?? env.GITHUB_TOKEN,
   });
 
   console.log(
-    CHANGELOG_RENDERERS[format](entries, {
-      audience: args.audience as Audience | undefined,
-      format: format as "markdown",
+    renderChangelog(format, entries, {
+      audience: audienceFlag(cli),
+      format,
       from,
-      packageName: args.package ?? readPackageName(),
+      packageName: value(cli, "package") ?? readPackageName(),
       repoUrl: `https://github.com/${owner}/${repo}`,
       to,
     })
@@ -270,6 +178,20 @@ async function changelogCommand(args: CliArgs) {
       `No change record found in the PR body for: ${missing.map((n) => `#${n}`).join(", ")}`
     );
   }
+}
+
+function audienceFlag(cli: Cli): Audience | undefined {
+  const requested = value(cli, "audience");
+  if (requested === undefined) {
+    return undefined;
+  }
+  const audience = VALID_AUDIENCES.find((a) => a === requested);
+  if (!audience) {
+    throw new UsageError(
+      `Unknown audience: ${requested}. Use one of: ${VALID_AUDIENCES.join(", ")}`
+    );
+  }
+  return audience;
 }
 
 function readPackageName(): string | undefined {
@@ -284,13 +206,12 @@ function readPackageName(): string | undefined {
   }
 }
 
-async function initCommand(args: CliArgs) {
+function initCommand(cli: Cli): void {
   const path = join(process.cwd(), CONFIG_FILE);
-  if (existsSync(path) && !args.force) {
-    console.error(
+  if (existsSync(path) && !on(cli, "force")) {
+    throw new UsageError(
       `${CONFIG_FILE} already exists. Pass --force to overwrite it.`
     );
-    process.exit(1);
   }
   const template = {
     ignore: ["**/*.snap", "dist/**"],
@@ -307,7 +228,5 @@ async function initCommand(args: CliArgs) {
   console.log(`Wrote ${CONFIG_FILE}`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const code = await main(process.argv.slice(2));
+process.exitCode = code;

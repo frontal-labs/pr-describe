@@ -41,6 +41,9 @@ export const DEFAULT_MODEL: SupportedModel = "qwen2.5-1.5b";
  */
 export const CONTEXT_SIZE = 8192;
 
+/** Fixed seed and zero temperature make output reproducible between runs. */
+const GENERATION_SEED = 42;
+
 /** Upper bound on generated tokens for one request. */
 const MAX_OUTPUT_TOKENS = 1536;
 
@@ -99,8 +102,9 @@ export class GgmlProvider implements Provider {
     const out = await this.get().generate({
       maxTokens: MAX_OUTPUT_TOKENS,
       prompt,
+      seed: GENERATION_SEED,
       system,
-      temperature: 0.1,
+      temperature: 0,
     });
     return out.text.trim();
   }
@@ -116,8 +120,9 @@ export class GgmlProvider implements Provider {
       prompt,
       schema,
       schemaName,
+      seed: GENERATION_SEED,
       system,
-      temperature: 0.1,
+      temperature: 0,
     });
     return out.object;
   }

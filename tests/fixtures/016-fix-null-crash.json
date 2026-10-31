@@ -1,0 +1,6 @@
+{
+  "type": "fix",
+  "scope": "auth",
+  "breaking": false,
+  "title": "Fix crash when session is missing"
+}

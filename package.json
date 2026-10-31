@@ -15,8 +15,7 @@
     "pr-describe": "dist/cli.js"
   },
   "scripts": {
-    "build": "bun run build:cli && bun run build:action",
-    "build:action": "bun build src/action.ts --outfile dist/action.js --target node --format esm --external ggml-node",
+    "build": "bun run build:cli",
     "build:cli": "bun build src/cli.ts --outfile dist/cli.js --target node --format esm --external ggml-node",
     "eval": "bun run tests/eval.ts",
     "generate": "bun run build",

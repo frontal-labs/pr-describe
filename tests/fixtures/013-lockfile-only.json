@@ -1,0 +1,6 @@
+{
+  "type": "internal",
+  "scope": "deps",
+  "breaking": false,
+  "title": "Bump zod to 4.6.7"
+}

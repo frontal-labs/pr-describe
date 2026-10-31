@@ -1,0 +1,12 @@
+diff --git a/tests/billing/pricing.test.ts b/tests/billing/pricing.test.ts
+--- a/tests/billing/pricing.test.ts
++++ b/tests/billing/pricing.test.ts
+@@ -10,3 +10,7 @@ describe("pricing", () => {
+   it("keeps two decimals", () => {
+     expect(formatPrice(1234, "USD")).toBe("$12.34");
+   });
++
++  it("rounds half cents up", () => {
++    expect(formatPrice(1235, "USD")).toBe("$12.35");
++  });
+ });

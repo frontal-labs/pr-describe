@@ -1,0 +1,6 @@
+{
+  "type": "internal",
+  "scope": "billing",
+  "breaking": false,
+  "title": "Add a rounding test for pricing"
+}

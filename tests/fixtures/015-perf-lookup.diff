@@ -1,0 +1,9 @@
+diff --git a/src/search/index.ts b/src/search/index.ts
+--- a/src/search/index.ts
++++ b/src/search/index.ts
+@@ -1,9 +1,6 @@
+ export function findAll(items: Item[], ids: string[]): Item[] {
+-  return ids.map((id) => items.find((i) => i.id === id)).filter(Boolean);
++  const byId = new Map(items.map((i) => [i.id, i]));
++  return ids.map((id) => byId.get(id)).filter(Boolean);
+ }

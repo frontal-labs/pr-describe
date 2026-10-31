@@ -1,0 +1,6 @@
+{
+  "type": "perf",
+  "scope": "search",
+  "breaking": false,
+  "title": "Speed up findAll with a lookup map"
+}

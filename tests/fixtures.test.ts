@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { coerceRecord, validateRecord } from "../src/core/record";
+import { coerceRecord, validateRecord } from "../src/record";
 
 interface Fixture {
   expected: {

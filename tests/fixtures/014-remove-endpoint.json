@@ -1,0 +1,6 @@
+{
+  "type": "breaking",
+  "scope": "api",
+  "breaking": true,
+  "title": "Remove the legacy v1 export endpoint (breaking)"
+}

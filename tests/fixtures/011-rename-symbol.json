@@ -1,0 +1,6 @@
+{
+  "type": "refactor",
+  "scope": "ui",
+  "breaking": false,
+  "title": "Rename fmtDate to formatDate"
+}
