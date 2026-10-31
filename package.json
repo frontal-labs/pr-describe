@@ -1,6 +1,6 @@
 {
   "name": "@frontal-labs/pr-describe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "description": "Drafts PR descriptions and change records from the diff, and turns them into changelogs.",
   "keywords": [
