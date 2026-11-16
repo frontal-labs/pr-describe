@@ -6,13 +6,12 @@ inputs:
     required: true
     default: ${{ github.event.pull_request.number || github.event.issue.number }}
   token:
-    description: "GitHub token"
+    description: "GitHub token. Defaults to the workflow's GITHUB_TOKEN. GitHub forbids secrets in action.yml defaults, so the workflow must pass it when in doubt."
     required: false
-    default: ${{ secrets.GITHUB_TOKEN }}
+    default: ""
   model:
     description: "ggml-node model id (qwen2.5-0.5b, qwen2.5-1.5b, smollm2-360m). Empty uses the config file, then qwen2.5-1.5b"
     required: false
-    default: ""
   update:
     description: "Replace the PR body with the generated description (needs pull-requests: write)"
     required: false
@@ -53,7 +52,9 @@ runs:
       env:
         ACTION_PATH: ${{ github.action_path }}
         PR_NUMBER: ${{ inputs.pr_number }}
-        GITHUB_TOKEN: ${{ inputs.token }}
+        # The token input defaults to empty (GitHub forbids secrets in action.yml
+        # defaults); fall back to the workflow's GITHUB_TOKEN.
+        GITHUB_TOKEN: ${{ inputs.token || env.GITHUB_TOKEN }}
         MODEL: ${{ inputs.model }}
         UPDATE: ${{ inputs.update }}
         WRITE_FILE: ${{ inputs.write_file }}
